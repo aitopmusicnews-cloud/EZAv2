@@ -15,6 +15,15 @@ const AUDIO_ANALYSIS_CLI = resolve(
   "../../../audio_analysis/analyze_cli.py",
 );
 
+const ANALYSIS_ENV = {
+  ...process.env,
+  // Keep scientific runtimes inside Render's small CPU/memory envelope.
+  OMP_NUM_THREADS: "1",
+  OPENBLAS_NUM_THREADS: "1",
+  MKL_NUM_THREADS: "1",
+  NUMEXPR_NUM_THREADS: "1",
+};
+
 type AudioAnalysisResponse = {
   duration: number;
   bpm: number;
@@ -26,21 +35,21 @@ type AudioAnalysisResponse = {
   sections: Array<{ start: number; end: number; label: string }>;
 };
 
-let librosaAvailable: boolean | null = null;
+let analysisRuntimeAvailable: boolean | null = null;
 
-async function checkLibrosa(): Promise<boolean> {
-  if (librosaAvailable !== null) return librosaAvailable;
+async function checkAnalysisRuntime(): Promise<boolean> {
+  if (analysisRuntimeAvailable !== null) return analysisRuntimeAvailable;
   try {
     const { stdout } = await execFileAsync(
       "python3",
-      ["-c", "import librosa; print('ok')"],
-      { timeout: 5_000 },
+      ["-c", "import numpy, scipy, soundfile; print('ok')"],
+      { timeout: 5_000, env: ANALYSIS_ENV },
     );
-    librosaAvailable = stdout.trim() === "ok";
+    analysisRuntimeAvailable = stdout.trim() === "ok";
   } catch {
-    librosaAvailable = false;
+    analysisRuntimeAvailable = false;
   }
-  return librosaAvailable;
+  return analysisRuntimeAvailable;
 }
 
 function normalizeAnalysis(raw: AudioAnalysisResponse): AudioAnalysis {
@@ -57,9 +66,9 @@ function normalizeAnalysis(raw: AudioAnalysisResponse): AudioAnalysis {
 }
 
 async function analyzeLocalFile(filePath: string): Promise<AudioAnalysis> {
-  if (!(await checkLibrosa())) {
+  if (!(await checkAnalysisRuntime())) {
     throw new Error(
-      "Audio analysis requires Python 3 with librosa installed. Install audio_analysis/requirements.txt.",
+      "Audio analysis requires Python 3 with numpy, scipy, and soundfile installed. Install audio_analysis/requirements.txt.",
     );
   }
   if (!existsSync(AUDIO_ANALYSIS_CLI)) {
@@ -69,6 +78,7 @@ async function analyzeLocalFile(filePath: string): Promise<AudioAnalysis> {
   const { stdout } = await execFileAsync("python3", [AUDIO_ANALYSIS_CLI, filePath], {
     maxBuffer: 50 * 1024 * 1024,
     timeout: 5 * 60_000,
+    env: ANALYSIS_ENV,
   });
   return normalizeAnalysis(JSON.parse(stdout) as AudioAnalysisResponse);
 }
