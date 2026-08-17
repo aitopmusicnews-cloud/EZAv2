@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
-
-const root = new URL("../../../../", import.meta.url);
+import { resolve } from "node:path";
 
 async function read(path: string) {
-  return readFile(new URL(path, root), "utf8");
+  return readFile(resolve(process.cwd(), path), "utf8");
 }
 
 describe("text-to-image and manual lip-sync contracts", () => {
