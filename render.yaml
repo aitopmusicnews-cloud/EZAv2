@@ -10,6 +10,8 @@ services:
         value: 22.16.0
       - key: AGNES_API_KEY
         sync: false
+      - key: SYNC_API_KEY
+        sync: false
       - key: PUBLIC_BASE_URL
         value: https://ezav2.onrender.com
       - key: WEB_ORIGIN
