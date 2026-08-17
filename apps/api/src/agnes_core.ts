@@ -1,5 +1,6 @@
 export const AGNES_CREATE_URL = "https://apihub.agnes-ai.com/v1/videos";
 export const AGNES_STATUS_URL = "https://apihub.agnes-ai.com/agnesapi";
+export const AGNES_IMAGE_CREATE_URL = "https://apihub.agnes-ai.com/v1/images/generations";
 export const AGNES_MODEL = "agnes-video-v2.0";
 export const AGNES_FRAME_RATE = 24;
 export const AGNES_MAX_FRAMES = 441;
@@ -14,6 +15,10 @@ export type AgnesDurationSegment = {
   targetDuration: number;
   numFrames: number;
 };
+
+export type AgnesImageResult =
+  | { kind: "url"; url: string }
+  | { kind: "base64"; data: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -79,6 +84,23 @@ export function parseAgnesCreateIds(payload: unknown): AgnesCreateIds {
     ? payload.task_id.trim()
     : null;
   return { videoId, taskId };
+}
+
+export function parseAgnesImageResult(payload: unknown): AgnesImageResult {
+  if (!isRecord(payload) || !Array.isArray(payload.data) || payload.data.length === 0) {
+    throw new Error("Agnes image response did not include data.");
+  }
+  const first = payload.data[0];
+  if (!isRecord(first)) throw new Error("Agnes image response item was malformed.");
+  if (typeof first.url === "string") {
+    const url = new URL(first.url);
+    if (url.protocol !== "https:") throw new Error("Agnes image URL was not HTTPS.");
+    return { kind: "url", url: url.toString() };
+  }
+  if (typeof first.b64_json === "string" && first.b64_json.trim()) {
+    return { kind: "base64", data: first.b64_json.trim() };
+  }
+  throw new Error("Agnes image response did not include url or b64_json.");
 }
 
 export function preferredAgnesResultUrl(videoId: string): string {
