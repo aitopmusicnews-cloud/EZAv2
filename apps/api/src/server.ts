@@ -18,6 +18,8 @@ import {
 import { analyzeAudioBytes } from "./audio.js";
 import { decodeTaskId } from "./generationJobs.js";
 import { agnesJobProgress, refreshAgnesJob, startAgnesVideo } from "./agnesVideo.js";
+import { generateAndSaveAgnesImage } from "./agnes_image.js";
+import { createSyncLipSync, getSyncLipSync } from "./sync_lipsync.js";
 import { submitRender, getRenderJob } from "./render_queue.js";
 import { FfmpegError } from "./ffmpeg.js";
 import { extractLastFrame } from "./frames.js";
@@ -26,7 +28,13 @@ import { saveProject, listProjects, loadProject, deleteProject, listRenders } fr
 import { saveClip, listClips, deleteClip } from "./clips.js";
 import { saveImage, listImages, deleteImage } from "./images.js";
 import { saveFolder, listFolders, deleteFolder } from "./folders.js";
-import { ImageToVideoRequest, KeyframeToVideoRequest, TextToVideoRequest } from "@mvs/shared";
+import {
+  ImageToVideoRequest,
+  KeyframeToVideoRequest,
+  LipSyncRequest,
+  TextToImageRequest,
+  TextToVideoRequest,
+} from "@mvs/shared";
 
 const SafeId = z
   .string()
@@ -239,7 +247,14 @@ app.get("/api/songs/:id/analysis", async (req, reply) => {
   return reply.send({ status: "pending" });
 });
 
-// Agnes Video V2.0 generation -----------------------------------------
+// Agnes generation ------------------------------------------------------
+
+app.post("/api/generate/text-to-image", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+  if (!config.AGNES_API_KEY) {
+    return reply.code(503).send({ error: "Agnes image generation is not configured." });
+  }
+  return reply.send(await generateAndSaveAgnesImage(TextToImageRequest.parse(req.body)));
+});
 
 app.post("/api/generate/image-to-video", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
   return reply.send(await startAgnesVideo(ImageToVideoRequest.parse(req.body), "imageToVideo"));
@@ -253,7 +268,7 @@ app.post("/api/generate/text-to-video", { config: { rateLimit: { max: 10, timeWi
   return reply.send(await startAgnesVideo(TextToVideoRequest.parse(req.body), "textToVideo"));
 });
 
-// Tasks ----------------------------------------------------------------
+// Agnes video tasks -----------------------------------------------------
 
 app.get("/api/tasks/:id", async (req, reply) => {
   const params = z.object({ id: z.string().min(1).max(500) }).parse(req.params);
@@ -279,6 +294,38 @@ app.get("/api/tasks/:id", async (req, reply) => {
     progress: job.status === "completed" ? 100 : agnesJobProgress(job),
     output: job.status === "completed" && job.video_url ? [job.video_url] : null,
     error: job.error,
+  });
+});
+
+// Manual selected-clip lip-sync ----------------------------------------
+
+app.post("/api/generate/lipsync", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (req, reply) => {
+  if (!config.SYNC_API_KEY) {
+    return reply.code(503).send({ error: "Manual lip-sync is not configured." });
+  }
+  const body = LipSyncRequest.parse(req.body);
+  const { url: slicedAudioUrl } = await sliceAudio(body.audioUrl, body.start, body.end);
+  const task = await createSyncLipSync(
+    { videoUrl: body.videoUrl, audioUrl: slicedAudioUrl },
+    config.SYNC_API_KEY,
+  );
+  return reply.send({ id: task.id });
+});
+
+app.get("/api/lipsync/tasks/:id", async (req, reply) => {
+  if (!config.SYNC_API_KEY) {
+    return reply.code(503).send({ error: "Manual lip-sync is not configured." });
+  }
+  const { id } = z.object({
+    id: z.string().min(1).max(200).regex(/^[a-zA-Z0-9_-]+$/),
+  }).parse(req.params);
+  const result = await getSyncLipSync(id, config.SYNC_API_KEY);
+  return reply.send({
+    id,
+    status: result.status === "completed" ? "SUCCEEDED" : result.status === "failed" ? "FAILED" : "RUNNING",
+    progress: result.progress ?? (result.status === "completed" ? 100 : undefined),
+    output: result.status === "completed" && result.outputUrl ? [result.outputUrl] : null,
+    error: result.error,
   });
 });
 
@@ -413,6 +460,8 @@ const SaveClipBody = z.object({
   folderId: z.string().nullable().optional(),
   model: z.string().nullable().optional(),
   generationTaskId: z.string().nullable().optional(),
+  lipSyncTaskId: z.string().nullable().optional(),
+  lipSyncModel: z.string().nullable().optional(),
 });
 
 app.get("/api/clips", async (_req, reply) => {
