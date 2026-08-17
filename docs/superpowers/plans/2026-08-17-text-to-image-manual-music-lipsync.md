@@ -6,96 +6,107 @@
 
 **Architecture:** Keep Agnes Video V2.0 as the video-generation provider, add Agnes Image 2.1 Flash as a synchronous image asset provider, and add Sync Labs `sync-3` behind a dedicated server-side lip-sync adapter. Text → Image is a UI-only sidebar mode rather than a new timeline clip source; manual lip-sync modifies an already-ready clip, stores provider task metadata separately from Agnes generation metadata, and reuses the existing audio slicer and clip rehosting path so output is durable on configured S3/local storage.
 
-**Tech Stack:** TypeScript, Fastify, React, Zustand, Zod, native `fetch`, FFmpeg, existing local/S3 storage, Agnes Image 2.1 Flash, Agnes Video V2.0, Sync Labs v2 lip-sync API.
+**Tech Stack:** TypeScript, Fastify, React, Zustand, Zod, Vitest/happy-dom, native `fetch`, FFmpeg, existing local/S3 storage, Agnes Image 2.1 Flash, Agnes Video V2.0, Sync Labs v2 lip-sync API.
 
 ## Global Constraints
 
 - Work on branch `feature/text-to-image`; do not commit implementation directly to `main`.
 - Text → Image uses `agnes-image-2.1-flash` at `POST /v1/images/generations` with the existing `AGNES_API_KEY`.
 - Video generation remains `agnes-video-v2.0`; Text → Image must not become a `Clip.source` value.
-- Lip-sync is **manual only**. No upload, generation, timeline, playback, or render action may auto-start lip-sync.
+- Lip-sync is **manual only**. No upload, generation, timeline, playback, render, mount, or selection action may start a new lip-sync job.
 - Manual lip-sync uses the selected clip's current `videoUrl` and the uploaded project's `audioUrl`, sliced from the selected clip's exact `[start, end]` timeline window.
-- Lip-sync provider is Sync Labs v2 with model `sync-3`, `POST https://api.sync.so/v2/generate`, and `GET https://api.sync.so/v2/generate/{id}` using server-only `SYNC_API_KEY` in the `x-api-key` header.
+- Lip-sync provider is Sync Labs v2 with model `sync-3`, generation endpoint `/v2/generate`, and generation-status endpoint `/v2/generate/{id}` using server-only `SYNC_API_KEY` in the `x-api-key` header.
 - Never expose `AGNES_API_KEY` or `SYNC_API_KEY` to browser code, logs, task IDs, URLs, or saved project JSON.
-- Lip-sync must preserve the clip's existing source (`textToVideo`, `imageToVideo`, `keyframeToVideo`, `library`, or `upload`); store lip-sync metadata in separate optional fields.
-- Final render must continue mapping the original uploaded song as the audio input. Provider audio embedded in generated/lip-synced clips is not the final soundtrack.
-- Generated images and completed lip-synced clips must be rehosted through the existing storage abstraction before being treated as durable library assets.
-- Keep public-media URL assumptions compatible with the current S3 deployment because Agnes and Sync Labs must fetch image/video/audio input URLs over HTTPS.
-- Agnes transient HTTP failures should use bounded exponential backoff. Apply the helper to both current video-create requests and the new image-create request so the existing 503 failure is improved as part of this work.
-- Do not automatically retry Sync Labs generation `POST` requests after an ambiguous network failure; a retry can create duplicate billable jobs. Polling `GET` requests may retry transient failures.
-- Add no provider SDK dependency; use native `fetch` so the existing install/build footprint stays unchanged.
-- Every task follows RED → GREEN → commit. Run the full test/typecheck/build gate before opening the PR.
+- Lip-sync preserves the clip's existing source (`textToVideo`, `imageToVideo`, `keyframeToVideo`, `library`, or `upload`); store lip-sync metadata in separate optional fields.
+- Final render continues mapping the original uploaded song as the audio input. Provider audio embedded in generated/lip-synced clips is never the final soundtrack.
+- Generated images and completed lip-synced clips must pass through the existing storage/library rehosting path before being treated as durable assets.
+- Keep public-media URL assumptions compatible with the current S3 deployment because Agnes and Sync Labs must fetch image/video/audio inputs over HTTPS.
+- Agnes transient failures use bounded exponential backoff. Apply the helper to current video creation and new image creation so the existing one-shot 503 behavior is improved.
+- Do not automatically retry Sync Labs generation `POST` requests after an ambiguous network failure; duplicate provider jobs can be billable. Sync status `GET` calls may retry transient failures.
+- Add no provider SDK dependency; use native `fetch` so the install/build footprint stays unchanged.
+- New automated tests live under `apps/**` or `packages/**`, because the repo's Vitest config only includes those paths. Existing root `tests/*.mjs` regressions may still be run explicitly with `node`.
+- Every task follows RED → GREEN → commit. Run the full `pnpm test`, `pnpm typecheck`, and `pnpm build` gates before opening the PR.
 
 ## File Structure
 
 **Create**
 - `apps/api/src/agnes_image.ts` — image-generation orchestration and durable image save.
-- `apps/api/src/sync_lipsync.ts` — pure Sync Labs create/status HTTP adapter and status normalization.
+- `apps/api/src/agnes_image.test.ts` — image parser/request/retry tests included by normal Vitest.
+- `apps/api/src/sync_lipsync.ts` — Sync Labs create/status HTTP adapter and status normalization.
+- `apps/api/src/sync_lipsync.test.ts` — provider request/status/retry tests included by normal Vitest.
 - `apps/web/src/lib/lipsync.ts` — manual lip-sync controller, stale-result protection, persistence, and resume behavior.
-- `tests/agnes-image.test.ts` — pure image parser + HTTP behavior tests.
-- `tests/sync-lipsync.test.ts` — Sync Labs request/status mapping tests.
-- `tests/text-to-image-lipsync-ui.test.mjs` — source-level wiring/guard regression test.
+- `apps/web/src/components/Sidebar.contract.test.ts` — source-level guard test for Text → Image/manual-only lip-sync wiring.
 
 **Modify**
 - `packages/shared/src/index.ts` — image/lip-sync schemas and clip metadata.
-- `apps/api/src/agnes_core.ts` — image endpoint/model constants and image result parser.
-- `apps/api/src/agnes_http.ts` — bounded Agnes retry helper, richer safe errors, image create call.
+- `apps/api/src/agnes_core.ts` — Agnes image endpoint and pure image-result parser.
+- `apps/api/src/agnes_http.ts` — bounded Agnes retry helper, safe provider errors, image create call.
 - `apps/api/src/config.ts` — `SYNC_API_KEY` server config and offline warning.
-- `apps/api/src/server.ts` — Text → Image and manual lip-sync routes; extend saved clip metadata validation.
+- `apps/api/src/server.ts` — Text → Image and manual lip-sync routes; saved clip metadata validation.
+- `apps/api/src/clips.ts` — persist lip-sync metadata while preserving existing clip source/model metadata.
 - `apps/web/src/lib/api.ts` — image generation and lip-sync API client functions.
 - `apps/web/src/components/Sidebar.tsx` — UI-only Text → Image mode, preview/actions, manual lip-sync button.
-- `apps/web/src/lib/store.ts` — normalize persisted lip-sync state safely.
-- `apps/web/src/routes/Editor.tsx` — resume in-flight manual lip-sync jobs on reload.
+- `apps/web/src/lib/store.ts` — safe normalization of persisted lip-sync state.
+- `apps/web/src/routes/Editor.tsx` — resume existing in-flight lip-sync jobs on reload; never start new ones.
 - `apps/web/src/styles/app.css` — generated-image preview/actions and lip-sync status styles.
 - `render.yaml` — secret `SYNC_API_KEY` declaration.
 - `RENDER_SETTINGS.md` — deployment variable documentation.
-- `tests/agnes-http.test.mjs` — verify video create now retries transient 503 and preserves request body.
-- `tests/final-render-policy.test.mjs` — preserve original-song audio mapping with lip-sync metadata present.
+- `tests/final-render-policy.test.mjs` — protect original-song audio mapping.
 
 ---
 
-### Task 1: Shared contracts and clip metadata
+### Task 1: Shared image/lip-sync contracts without changing timeline source semantics
 
 **Files:**
 - Modify: `packages/shared/src/index.ts`
-- Test: `tests/text-to-image-lipsync-ui.test.mjs`
+- Create: `apps/web/src/components/Sidebar.contract.test.ts`
 
 **Interfaces:**
 - Produces: `AGNES_IMAGE_MODEL`, `SYNC_LIPSYNC_MODEL`, `TextToImageRequest`, `LipSyncRequest`, `LipSyncStatus`, and optional lip-sync fields on `Clip` / `SavedClip`.
-- Consumes: existing `Clip`, `SavedClip`, `Task`, `AGNES_VIDEO_MODEL` definitions.
+- Consumes: existing `Clip`, `SavedClip`, `Task`, and `AGNES_VIDEO_MODEL` definitions.
 
-- [ ] **Step 1: Write the failing contract/source test**
+- [ ] **Step 1: Write the failing contract test**
 
-Create `tests/text-to-image-lipsync-ui.test.mjs` initially with only the shared-contract assertions:
+Create `apps/web/src/components/Sidebar.contract.test.ts`:
 
-```js
-import assert from "node:assert/strict";
+```ts
+import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 
-const shared = await readFile("packages/shared/src/index.ts", "utf8");
-assert.match(shared, /AGNES_IMAGE_MODEL\s*=\s*"agnes-image-2\.1-flash"/);
-assert.match(shared, /SYNC_LIPSYNC_MODEL\s*=\s*"sync-3"/);
-assert.match(shared, /TextToImageRequest/);
-assert.match(shared, /LipSyncRequest/);
-assert.match(shared, /lipSyncTaskId/);
-assert.match(shared, /lipSyncStatus/);
-assert.match(shared, /lipSyncSourceVideoUrl/);
-assert.match(shared, /lipSyncModel/);
+const root = new URL("../../../../", import.meta.url);
+
+async function read(path: string) {
+  return readFile(new URL(path, root), "utf8");
+}
+
+describe("text-to-image and lip-sync contracts", () => {
+  it("adds provider contracts without adding image/lip-sync to Clip.source", async () => {
+    const shared = await read("packages/shared/src/index.ts");
+    expect(shared).toMatch(/AGNES_IMAGE_MODEL\s*=\s*"agnes-image-2\.1-flash"/);
+    expect(shared).toMatch(/SYNC_LIPSYNC_MODEL\s*=\s*"sync-3"/);
+    expect(shared).toMatch(/TextToImageRequest/);
+    expect(shared).toMatch(/LipSyncRequest/);
+    expect(shared).toMatch(/lipSyncTaskId/);
+    expect(shared).toMatch(/lipSyncStatus/);
+    expect(shared).toMatch(/lipSyncSourceVideoUrl/);
+    expect(shared).toMatch(/lipSyncModel/);
+    expect(shared).not.toMatch(/z\.enum\(\[[^\]]*"textToImage"[^\]]*\]\)/s);
+    expect(shared).not.toMatch(/z\.enum\(\[[^\]]*"lipSync"[^\]]*\]\)/s);
+  });
+});
 ```
 
 - [ ] **Step 2: Run the test and confirm RED**
 
-Run:
-
 ```bash
-pnpm exec vitest run tests/text-to-image-lipsync-ui.test.mjs
+pnpm exec vitest run apps/web/src/components/Sidebar.contract.test.ts
 ```
 
-Expected: FAIL because the image/lip-sync constants and schemas do not exist.
+Expected: FAIL because the contracts do not exist yet.
 
-- [ ] **Step 3: Add exact shared contracts without changing `Clip.source`**
+- [ ] **Step 3: Add the exact shared contracts**
 
-Add alongside `AGNES_VIDEO_MODEL`:
+Add near `AGNES_VIDEO_MODEL`:
 
 ```ts
 export const AGNES_IMAGE_MODEL = "agnes-image-2.1-flash" as const;
@@ -123,7 +134,7 @@ export type LipSyncRequest = z.infer<typeof LipSyncRequest>;
 export type LipSyncStatus = "idle" | "queued" | "generating" | "ready" | "failed";
 ```
 
-Extend `Clip` with metadata only; **do not** add `textToImage` or `lipSync` to the source enum:
+Extend `Clip` with metadata only:
 
 ```ts
 lipSyncTaskId: z.string().optional(),
@@ -139,10 +150,12 @@ lipSyncTaskId?: string | null;
 lipSyncModel?: string | null;
 ```
 
-- [ ] **Step 4: Run the targeted test and typecheck**
+Do **not** add `textToImage` or `lipSync` to `ActiveClipSource`, `Clip.source`, or `GenerationModel`.
+
+- [ ] **Step 4: Run test + typecheck**
 
 ```bash
-pnpm exec vitest run tests/text-to-image-lipsync-ui.test.mjs
+pnpm exec vitest run apps/web/src/components/Sidebar.contract.test.ts
 pnpm typecheck
 ```
 
@@ -151,82 +164,102 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/shared/src/index.ts tests/text-to-image-lipsync-ui.test.mjs
+git add packages/shared/src/index.ts apps/web/src/components/Sidebar.contract.test.ts
 git commit -m "feat: add image and lip-sync contracts"
 ```
 
 ---
 
-### Task 2: Agnes image result parser and bounded HTTP retry
+### Task 2: Agnes image parsing plus bounded transient retry for image and video creation
 
 **Files:**
 - Modify: `apps/api/src/agnes_core.ts`
 - Modify: `apps/api/src/agnes_http.ts`
-- Create: `tests/agnes-image.test.ts`
-- Modify: `tests/agnes-http.test.mjs`
+- Create: `apps/api/src/agnes_image.test.ts`
 
 **Interfaces:**
-- Produces: `createAgnesImage(input, apiKey, fetchImpl?, sleepImpl?)`, returning either `{ kind: "url"; url: string }` or `{ kind: "base64"; data: string }`.
-- Produces: bounded retry behavior for Agnes transient statuses.
-- Consumes: `AGNES_API_KEY`, `AGNES_IMAGE_MODEL`, existing Agnes video HTTP adapter.
+- Produces: `parseAgnesImageResult(payload)`.
+- Produces: `createAgnesImage(input, apiKey, fetchImpl?, sleepImpl?)` returning `{ kind: "url"; url } | { kind: "base64"; data }`.
+- Produces: bounded retry used by Agnes `createAgnesVideo` and `createAgnesImage`.
 
-- [ ] **Step 1: Write failing image parser/request tests**
+- [ ] **Step 1: Write failing parser/request/retry tests**
 
-Create `tests/agnes-image.test.ts`:
+Create `apps/api/src/agnes_image.test.ts`:
 
 ```ts
-import { createAgnesImage } from "../apps/api/src/agnes_http.js";
-import { parseAgnesImageResult } from "../apps/api/src/agnes_core.js";
+import { describe, expect, it, vi } from "vitest";
+import { parseAgnesImageResult } from "./agnes_core.js";
+import { createAgnesImage, createAgnesVideo } from "./agnes_http.js";
 
-function equal(actual: unknown, expected: unknown, label: string) {
-  if (actual !== expected) throw new Error(`${label}: expected ${String(expected)}, got ${String(actual)}`);
-}
+const jsonResponse = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json", ...headers },
+  });
 
-const urlResult = parseAgnesImageResult({ data: [{ url: "https://cdn.example.com/generated.png" }] });
-equal(urlResult.kind, "url", "url result kind");
-if (urlResult.kind === "url") equal(urlResult.url, "https://cdn.example.com/generated.png", "url result");
+describe("Agnes image integration", () => {
+  it("parses URL and base64 image responses", () => {
+    expect(parseAgnesImageResult({ data: [{ url: "https://cdn.example.com/generated.png" }] }))
+      .toEqual({ kind: "url", url: "https://cdn.example.com/generated.png" });
+    expect(parseAgnesImageResult({ data: [{ b64_json: "aGVsbG8=" }] }))
+      .toEqual({ kind: "base64", data: "aGVsbG8=" });
+  });
 
-const b64Result = parseAgnesImageResult({ data: [{ b64_json: "aGVsbG8=" }] });
-equal(b64Result.kind, "base64", "base64 result kind");
+  it("retries an explicit 503 then succeeds", async () => {
+    const sleep = vi.fn(async () => {});
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: { message: "busy" } }, 503))
+      .mockResolvedValueOnce(jsonResponse({ data: [{ url: "https://cdn.example.com/image.png" }] }));
 
-let calls = 0;
-let capturedBody = "";
-const result = await createAgnesImage(
-  { prompt: "cinematic singer", size: "1536x864" },
-  "secret",
-  async (_url, init) => {
-    calls += 1;
-    capturedBody = String(init?.body ?? "");
-    if (calls === 1) return new Response(JSON.stringify({ error: { message: "busy" } }), { status: 503 });
-    return new Response(JSON.stringify({ data: [{ url: "https://cdn.example.com/image.png" }] }), { status: 200 });
-  },
-  async () => {},
-);
-equal(calls, 2, "503 retry count");
-equal(result.kind, "url", "create image result");
-const request = JSON.parse(capturedBody);
-equal(request.model, "agnes-image-2.1-flash", "image model");
-equal(request.prompt, "cinematic singer", "prompt");
-equal(request.size, "1536x864", "size");
+    const result = await createAgnesImage(
+      { prompt: "cinematic singer", size: "1536x864" },
+      "secret",
+      fetchMock as typeof fetch,
+      sleep,
+    );
+
+    expect(result).toEqual({ kind: "url", url: "https://cdn.example.com/image.png" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    const request = JSON.parse(String(fetchMock.mock.calls[1]![1]!.body));
+    expect(request).toMatchObject({
+      model: "agnes-image-2.1-flash",
+      prompt: "cinematic singer",
+      size: "1536x864",
+    });
+  });
+
+  it("applies the same 503 retry to video creation", async () => {
+    const sleep = vi.fn(async () => {});
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ message: "busy" }, 503))
+      .mockResolvedValueOnce(jsonResponse({ video_id: "video-1" }));
+
+    await expect(createAgnesVideo(
+      { prompt: "scene", width: 1152, height: 768, numFrames: 121 },
+      "secret",
+      fetchMock as typeof fetch,
+      sleep,
+    )).resolves.toEqual({ videoId: "video-1", taskId: null });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
 ```
 
-Append to `tests/agnes-http.test.mjs` a video retry assertion using the same mocked 503 → 200 sequence.
-
-- [ ] **Step 2: Run tests and confirm RED**
+- [ ] **Step 2: Run and confirm RED**
 
 ```bash
-pnpm exec vitest run tests/agnes-image.test.ts tests/agnes-http.test.mjs
+pnpm exec vitest run apps/api/src/agnes_image.test.ts
 ```
 
-Expected: FAIL because the parser/image call/retry helper are missing.
+Expected: FAIL because parser/image call/retry injection are missing.
 
-- [ ] **Step 3: Add image constants and parser in `agnes_core.ts`**
+- [ ] **Step 3: Add pure image parser in `agnes_core.ts` without duplicating the model constant**
 
-Add:
+Import the shared model constant where needed; keep only the endpoint constant in API core:
 
 ```ts
 export const AGNES_IMAGE_CREATE_URL = "https://apihub.agnes-ai.com/v1/images/generations";
-export const AGNES_IMAGE_MODEL = "agnes-image-2.1-flash";
 
 export type AgnesImageResult =
   | { kind: "url"; url: string }
@@ -250,57 +283,62 @@ export function parseAgnesImageResult(payload: unknown): AgnesImageResult {
 }
 ```
 
-- [ ] **Step 4: Replace one-shot Agnes HTTP calls with bounded retry**
+- [ ] **Step 4: Add bounded retry with a fresh timeout signal per attempt**
 
-In `agnes_http.ts`, add a private retry helper with exactly four maximum attempts and backoff delays `[500, 1000, 2000]` ms. Retry only `408`, `429`, `500`, `502`, `503`, `504`, `520`, `522`, `524` responses. Respect `Retry-After` seconds when present, capped at 5 seconds.
-
-Core shape:
+In `agnes_http.ts`:
 
 ```ts
 const TRANSIENT_AGNES_STATUSES = new Set([408, 429, 500, 502, 503, 504, 520, 522, 524]);
-const RETRY_DELAYS_MS = [500, 1000, 2000];
-
+const RETRY_DELAYS_MS = [500, 1000, 2000] as const;
 type SleepLike = (ms: number) => Promise<void>;
 const defaultSleep: SleepLike = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function fetchAgnesWithRetry(
   url: string,
-  init: RequestInit,
-  fetchImpl: FetchLike,
-  sleepImpl: SleepLike = defaultSleep,
+  init: Omit<RequestInit, "signal">,
+  fetchImpl: typeof fetch,
+  sleepImpl: SleepLike,
+  timeoutMs: number,
 ): Promise<Response> {
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
-    const response = await fetchImpl(url, init);
-    if (!TRANSIENT_AGNES_STATUSES.has(response.status) || attempt === RETRY_DELAYS_MS.length) return response;
-    const retryAfterSeconds = Number(response.headers.get("retry-after"));
-    const delay = Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0
-      ? Math.min(5000, retryAfterSeconds * 1000)
+    const response = await fetchImpl(url, {
+      ...init,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!TRANSIENT_AGNES_STATUSES.has(response.status) || attempt === RETRY_DELAYS_MS.length) {
+      return response;
+    }
+    const retryAfter = Number(response.headers.get("retry-after"));
+    const delayMs = Number.isFinite(retryAfter) && retryAfter >= 0
+      ? Math.min(5000, retryAfter * 1000)
       : RETRY_DELAYS_MS[attempt]!;
-    await sleepImpl(delay);
+    await sleepImpl(delayMs);
   }
   throw new Error("unreachable");
 }
 ```
 
-Use it for `createAgnesVideo`. Keep GET status polling one request per existing poll cycle; do not nest four retries into every normal pending poll unless the GET itself returns a transient HTTP error.
+Change `createAgnesVideo` signature to accept `sleepImpl: SleepLike = defaultSleep`, then route its POST through this helper. Do not change the existing logical request body.
 
-- [ ] **Step 5: Preserve safe provider diagnostics**
+- [ ] **Step 5: Improve safe non-2xx diagnostics**
 
-Change `readJson` so a non-2xx response extracts only a short provider `error.message`, `message`, or `error` string and appends it to the error without logging the request body or API key. Cap provider text at 300 characters.
-
-Expected error shape:
+Change `readJson` so non-2xx JSON extracts only a short `error.message`, string `message`, or string `error`, capped at 300 characters. Example final message:
 
 ```text
 Agnes create-video request failed with status 503: system busy
 ```
 
+Never include request headers, bearer token, or full request body.
+
 - [ ] **Step 6: Implement `createAgnesImage`**
+
+Import `AGNES_IMAGE_MODEL` from `@mvs/shared` and `AGNES_IMAGE_CREATE_URL` / parser from `agnes_core.ts`:
 
 ```ts
 export async function createAgnesImage(
   input: { prompt: string; size: string },
   apiKey: string,
-  fetchImpl: FetchLike = fetch,
+  fetchImpl: typeof fetch = fetch,
   sleepImpl: SleepLike = defaultSleep,
 ): Promise<AgnesImageResult> {
   const response = await fetchAgnesWithRetry(
@@ -315,63 +353,60 @@ export async function createAgnesImage(
         model: AGNES_IMAGE_MODEL,
         prompt: input.prompt,
         size: input.size,
-        response_format: "url",
       }),
-      signal: AbortSignal.timeout(60_000),
     },
     fetchImpl,
     sleepImpl,
+    60_000,
   );
   return parseAgnesImageResult(await readJson(response, "create-image"));
 }
 ```
 
-- [ ] **Step 7: Run targeted tests and commit**
+The parser deliberately accepts either URL or `b64_json`, so the code does not depend on an undocumented response-format default.
+
+- [ ] **Step 7: Run test/typecheck and commit**
 
 ```bash
-pnpm exec vitest run tests/agnes-image.test.ts tests/agnes-http.test.mjs
+pnpm exec vitest run apps/api/src/agnes_image.test.ts
 pnpm typecheck
-git add apps/api/src/agnes_core.ts apps/api/src/agnes_http.ts tests/agnes-image.test.ts tests/agnes-http.test.mjs
+git add apps/api/src/agnes_core.ts apps/api/src/agnes_http.ts apps/api/src/agnes_image.test.ts
 git commit -m "feat: add Agnes image generation and retries"
 ```
 
 ---
 
-### Task 3: Durable Text → Image API route and automatic library save
+### Task 3: Durable Text → Image route and automatic Images Library save
 
 **Files:**
 - Create: `apps/api/src/agnes_image.ts`
 - Modify: `apps/api/src/server.ts`
 - Modify: `apps/web/src/lib/api.ts`
-- Test: `tests/text-to-image-lipsync-ui.test.mjs`
+- Modify: `apps/web/src/components/Sidebar.contract.test.ts`
 
 **Interfaces:**
-- Produces server route: `POST /api/generate/text-to-image`.
-- Produces web client: `generateTextToImage(req: TextToImageRequest): Promise<SavedImage>`.
-- Consumes: `createAgnesImage`, `saveImage`, `storage.saveUpload`, `TextToImageRequest`.
+- Produces: `POST /api/generate/text-to-image` returning a `SavedImage`.
+- Produces: `generateTextToImage(req: TextToImageRequest): Promise<SavedImage>`.
+- Consumes: `createAgnesImage`, existing `saveImage`, `storage.saveUpload`, `TextToImageRequest`.
 
-- [ ] **Step 1: Extend the source test and confirm RED**
+- [ ] **Step 1: Add failing route/client assertions**
 
-Append assertions:
+Extend `Sidebar.contract.test.ts`:
 
-```js
-const server = await readFile("apps/api/src/server.ts", "utf8");
-const api = await readFile("apps/web/src/lib/api.ts", "utf8");
-assert.match(server, /\/api\/generate\/text-to-image/);
-assert.match(api, /generateTextToImage/);
+```ts
+it("wires text-to-image through the server and browser API", async () => {
+  const server = await read("apps/api/src/server.ts");
+  const api = await read("apps/web/src/lib/api.ts");
+  expect(server).toMatch(/\/api\/generate\/text-to-image/);
+  expect(api).toMatch(/generateTextToImage/);
+});
 ```
 
-Run:
+Run targeted test and confirm RED.
 
-```bash
-pnpm exec vitest run tests/text-to-image-lipsync-ui.test.mjs
-```
+- [ ] **Step 2: Create durable image orchestration**
 
-Expected: FAIL.
-
-- [ ] **Step 2: Create `agnes_image.ts` orchestration**
-
-Implement:
+Create `apps/api/src/agnes_image.ts`:
 
 ```ts
 import { randomUUID } from "node:crypto";
@@ -394,13 +429,11 @@ export async function generateAndSaveAgnesImage(input: TextToImageRequest) {
   } else {
     const bytes = Buffer.from(result.data, "base64");
     if (!bytes.length) throw new Error("Agnes returned an empty image.");
-    const savedUpload = await storage.saveUpload(bytes, "agnes-generated.png", "image/png");
-    url = savedUpload.publicUrl;
+    url = (await storage.saveUpload(bytes, "agnes-generated.png", "image/png")).publicUrl;
   }
 
-  const id = `img_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
   return saveImage({
-    id,
+    id: `img_${randomUUID().replaceAll("-", "").slice(0, 20)}`,
     name: input.promptText.slice(0, 80),
     url,
     source: "textToImage",
@@ -410,11 +443,11 @@ export async function generateAndSaveAgnesImage(input: TextToImageRequest) {
 }
 ```
 
-This deliberately calls existing `saveImage`, so provider URLs are rehosted to S3/local storage before the SavedImage metadata is returned.
+Provider URL results go through existing `saveImage`, which rehosts external URLs using configured storage. Base64 results are uploaded directly, then saved as normal image metadata.
 
 - [ ] **Step 3: Add Fastify route**
 
-Import `TextToImageRequest` and `generateAndSaveAgnesImage`, then add near the existing Agnes routes:
+Import `TextToImageRequest` and `generateAndSaveAgnesImage`, then add near the Agnes video routes:
 
 ```ts
 app.post(
@@ -424,15 +457,14 @@ app.post(
     if (!config.AGNES_API_KEY) {
       return reply.code(503).send({ error: "Agnes image generation is not configured." });
     }
-    const saved = await generateAndSaveAgnesImage(TextToImageRequest.parse(req.body));
-    return reply.send(saved);
+    return reply.send(await generateAndSaveAgnesImage(TextToImageRequest.parse(req.body)));
   },
 );
 ```
 
 - [ ] **Step 4: Add browser API function**
 
-In `apps/web/src/lib/api.ts` import `TextToImageRequest` and add:
+In `apps/web/src/lib/api.ts` import the request type and add:
 
 ```ts
 export async function generateTextToImage(req: TextToImageRequest): Promise<SavedImage> {
@@ -444,80 +476,91 @@ export async function generateTextToImage(req: TextToImageRequest): Promise<Save
 }
 ```
 
-- [ ] **Step 5: Run tests/typecheck and commit**
+- [ ] **Step 5: Run tests/build gate and commit**
 
 ```bash
-pnpm exec vitest run tests/agnes-image.test.ts tests/text-to-image-lipsync-ui.test.mjs
+pnpm exec vitest run apps/api/src/agnes_image.test.ts apps/web/src/components/Sidebar.contract.test.ts
 pnpm typecheck
-git add apps/api/src/agnes_image.ts apps/api/src/server.ts apps/web/src/lib/api.ts tests/text-to-image-lipsync-ui.test.mjs
+pnpm --filter @mvs/api build
+git add apps/api/src/agnes_image.ts apps/api/src/server.ts apps/web/src/lib/api.ts apps/web/src/components/Sidebar.contract.test.ts
 git commit -m "feat: add durable text-to-image route"
 ```
 
 ---
 
-### Task 4: Text → Image sidebar mode, preview, and image-to-video handoff
+### Task 4: Text → Image sidebar mode, preview, and explicit Image → Video handoff
 
 **Files:**
 - Modify: `apps/web/src/components/Sidebar.tsx`
 - Modify: `apps/web/src/styles/app.css`
-- Test: `tests/text-to-image-lipsync-ui.test.mjs`
+- Modify: `apps/web/src/components/Sidebar.contract.test.ts`
 
 **Interfaces:**
-- Consumes: `generateTextToImage`, `SavedImage`, `addLookbook`, `updateClip`, existing `enqueueGeneration` video flow.
-- Produces: UI-only `textToImage` mode, saved image preview, `Add to Lookbook`, and `Use as Start Image` actions.
+- Consumes: `generateTextToImage`, `SavedImage`, `addLookbook`, `updateClip`.
+- Produces: UI-only `textToImage` mode, saved preview, `Add to Lookbook`, and `Use as Start Image` actions.
 
-- [ ] **Step 1: Extend the UI source test and confirm RED**
+- [ ] **Step 1: Add failing UI assertions**
 
-Append:
+Extend the contract test:
 
-```js
-const sidebar = await readFile("apps/web/src/components/Sidebar.tsx", "utf8");
-assert.match(sidebar, /Text → Image/);
-assert.match(sidebar, /generateTextToImage/);
-assert.match(sidebar, /Add to Lookbook/);
-assert.match(sidebar, /Use as Start Image/);
-assert.doesNotMatch(shared, /source:\s*z\.enum\(\[[^\]]*"textToImage"/s, "Text → Image must not become a timeline clip source");
+```ts
+it("exposes text-to-image as a UI-only mode with explicit handoff actions", async () => {
+  const sidebar = await read("apps/web/src/components/Sidebar.tsx");
+  expect(sidebar).toMatch(/Text → Image/);
+  expect(sidebar).toMatch(/generateTextToImage/);
+  expect(sidebar).toMatch(/Add to Lookbook/);
+  expect(sidebar).toMatch(/Use as Start Image/);
+  expect(sidebar).not.toMatch(/enqueueGeneration\([^)]*textToImage/s);
+});
 ```
 
-Run the test; expect FAIL.
+Run and confirm RED.
 
-- [ ] **Step 2: Add a UI-only sidebar mode**
+- [ ] **Step 2: Add hook-safe UI state before the existing conditional return**
 
-Define:
+All new hooks must be declared before `if (!clip || !analysis) return null;` so hook order never changes:
 
 ```ts
 type SidebarMode = GenerationSource | "textToImage" | "library";
-```
 
-Add `{ value: "textToImage", label: "Text → Image", desc: "Create a reusable still image with Agnes before animating it." }` to the mode options.
-
-Keep the timeline source separate:
-
-```ts
-const clipSource: GenerationSource | "library" = /* existing normalization */;
-const [mode, setMode] = useState<SidebarMode>(clipSource);
-useEffect(() => setMode(clipSource), [clip.id]);
-```
-
-When a user selects `textToImage`, update only local `mode`; do not call `updateClip(...source...)`.
-
-- [ ] **Step 3: Add image-generation local state**
-
-```ts
+const [mode, setMode] = useState<SidebarMode>("textToVideo");
 const [generatedImage, setGeneratedImage] = useState<SavedImage | null>(null);
 const [imageGenerating, setImageGenerating] = useState(false);
-const imagePrompt = clip.imagePrompt ?? "";
+const [imageSize, setImageSize] = useState("1536x864");
+
+useEffect(() => {
+  if (!clip) return;
+  const next: GenerationSource | "library" =
+    clip.source === "imageToVideo" || clip.source === "keyframeToVideo" || clip.source === "library"
+      ? clip.source
+      : "textToVideo";
+  setMode(next);
+  setGeneratedImage(null);
+}, [clip?.id]);
 ```
 
-When `mode === "textToImage"`, render:
+After the null guard, derive the normal clip source separately. Do not use `mode` as `clip.source` when `mode === "textToImage"`.
+
+- [ ] **Step 3: Add Text → Image to the mode options**
+
+```ts
+{ value: "textToImage", label: "Text → Image", desc: "Create a reusable still image with Agnes before animating it." }
+```
+
+`setMode` behavior:
+- `textToImage`: local state only;
+- `library`: update clip source to `library` as existing behavior requires;
+- Agnes video modes: update clip source/model as existing behavior requires.
+
+- [ ] **Step 4: Render image prompt/size/preview controls**
+
+When `mode === "textToImage"`, show:
 - textarea bound to `clip.imagePrompt`;
-- preset size select with `1536x864` (landscape/default), `1024x1024` (square), `864x1536` (portrait), `1024x768`, `768x1024`;
+- preset sizes `1536x864` (landscape/default), `1024x1024` (square), `864x1536` (portrait), `1024x768`, `768x1024`;
 - `Generate Image with Agnes` button;
-- preview when `generatedImage` exists.
+- generated image preview.
 
-- [ ] **Step 4: Implement generation and explicit handoff actions**
-
-Generation:
+Generation handler:
 
 ```ts
 const onGenerateImage = async () => {
@@ -536,9 +579,11 @@ const onGenerateImage = async () => {
 };
 ```
 
-`Add to Lookbook` calls `addLookbook(generatedImage.url)` only.
+- [ ] **Step 5: Add explicit reusable-image actions**
 
-`Use as Start Image` performs:
+`Add to Lookbook` only calls `addLookbook(generatedImage.url)`.
+
+`Use as Start Image`:
 
 ```ts
 addLookbook(generatedImage.url);
@@ -552,96 +597,114 @@ setMode("imageToVideo");
 toast.success("Image set as the selected clip's first-frame reference");
 ```
 
-Do **not** automatically start video generation; the Image → Video motion prompt remains an explicit next action.
+Do **not** auto-call `enqueueGeneration`. The user next writes/accepts the motion prompt and presses the existing Agnes video generate button.
 
-- [ ] **Step 5: Add minimal CSS**
+- [ ] **Step 6: Add minimal CSS and verify**
 
-Add classes such as `.generated-image-card`, `.generated-image-preview`, `.generated-image-actions`, and reuse existing `.btn`/`.option-group` styles. Keep the preview responsive with `aspect-ratio` and `object-fit: cover`.
+Add `.generated-image-card`, `.generated-image-preview`, `.generated-image-actions`; reuse existing button classes. Preview uses `width: 100%`, `aspect-ratio`, and `object-fit: cover` without adding a new design system.
 
-- [ ] **Step 6: Run targeted tests and commit**
+Run:
 
 ```bash
-pnpm exec vitest run tests/text-to-image-lipsync-ui.test.mjs
+pnpm exec vitest run apps/web/src/components/Sidebar.contract.test.ts
 pnpm typecheck
 pnpm --filter @mvs/web build
-git add apps/web/src/components/Sidebar.tsx apps/web/src/styles/app.css tests/text-to-image-lipsync-ui.test.mjs
+```
+
+Expected: PASS.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add apps/web/src/components/Sidebar.tsx apps/web/src/styles/app.css apps/web/src/components/Sidebar.contract.test.ts
 git commit -m "feat: add text-to-image sidebar workflow"
 ```
 
 ---
 
-### Task 5: Sync Labs server adapter and deployment secret
+### Task 5: Sync Labs adapter and server-only deployment secret
 
 **Files:**
 - Create: `apps/api/src/sync_lipsync.ts`
+- Create: `apps/api/src/sync_lipsync.test.ts`
 - Modify: `apps/api/src/config.ts`
 - Modify: `render.yaml`
 - Modify: `RENDER_SETTINGS.md`
-- Create: `tests/sync-lipsync.test.ts`
 
 **Interfaces:**
 - Produces: `createSyncLipSync({ videoUrl, audioUrl }, apiKey, fetchImpl?) -> { id }`.
-- Produces: `getSyncLipSync(id, apiKey, fetchImpl?) -> { status, outputUrl, error, progress }`.
-- Consumes: `SYNC_API_KEY` and public HTTPS video/audio URLs.
+- Produces: `getSyncLipSync(id, apiKey, fetchImpl?, sleepImpl?) -> { status, outputUrl, error, progress }`.
 
-- [ ] **Step 1: Write failing provider adapter tests**
+- [ ] **Step 1: Write failing provider tests**
 
-Create `tests/sync-lipsync.test.ts`:
+Create `apps/api/src/sync_lipsync.test.ts`:
 
 ```ts
-import { createSyncLipSync, getSyncLipSync } from "../apps/api/src/sync_lipsync.js";
+import { describe, expect, it, vi } from "vitest";
+import { createSyncLipSync, getSyncLipSync } from "./sync_lipsync.js";
 
-function equal(actual: unknown, expected: unknown, label: string) {
-  if (actual !== expected) throw new Error(`${label}: expected ${String(expected)}, got ${String(actual)}`);
-}
+const jsonResponse = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
-let init: RequestInit | undefined;
-const created = await createSyncLipSync(
-  { videoUrl: "https://cdn.example.com/clip.mp4", audioUrl: "https://cdn.example.com/slice.mp3" },
-  "sync-secret",
-  async (_url, nextInit) => {
-    init = nextInit;
-    return new Response(JSON.stringify({ id: "job-123", status: "PENDING", outputUrl: "" }), { status: 201 });
-  },
-);
-equal(created.id, "job-123", "provider id");
-const body = JSON.parse(String(init?.body));
-equal(body.model, "sync-3", "sync model");
-equal(body.input[0].type, "video", "video input");
-equal(body.input[1].type, "audio", "audio input");
-equal(new Headers(init?.headers).get("x-api-key"), "sync-secret", "api key header");
+describe("Sync Labs lip-sync adapter", () => {
+  it("creates sync-3 with one video and one audio URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: "job-123", status: "PENDING" }, 201));
+    await expect(createSyncLipSync(
+      { videoUrl: "https://cdn.example.com/clip.mp4", audioUrl: "https://cdn.example.com/slice.mp3" },
+      "sync-secret",
+      fetchMock as typeof fetch,
+    )).resolves.toEqual({ id: "job-123" });
+    const [, init] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse(String(init!.body));
+    expect(body).toEqual({
+      model: "sync-3",
+      input: [
+        { type: "video", url: "https://cdn.example.com/clip.mp4" },
+        { type: "audio", url: "https://cdn.example.com/slice.mp3" },
+      ],
+    });
+    expect(new Headers(init!.headers).get("x-api-key")).toBe("sync-secret");
+  });
 
-const completed = await getSyncLipSync("job-123", "sync-secret", async () =>
-  new Response(JSON.stringify({ status: "COMPLETED", outputUrl: "https://cdn.example.com/lipsynced.mp4", progress_percent: 100 }), { status: 200 }),
-);
-equal(completed.status, "completed", "completed mapping");
-equal(completed.outputUrl, "https://cdn.example.com/lipsynced.mp4", "output url");
+  it("maps completed and rejected states", async () => {
+    await expect(getSyncLipSync("job-123", "secret", async () =>
+      jsonResponse({ status: "COMPLETED", outputUrl: "https://cdn.example.com/out.mp4", progress_percent: 100 })
+    )).resolves.toMatchObject({ status: "completed", outputUrl: "https://cdn.example.com/out.mp4", progress: 100 });
 
-const rejected = await getSyncLipSync("job-123", "sync-secret", async () =>
-  new Response(JSON.stringify({ status: "REJECTED", error: "no face", errorCode: "face_not_detected" }), { status: 200 }),
-);
-equal(rejected.status, "failed", "rejected mapping");
+    await expect(getSyncLipSync("job-123", "secret", async () =>
+      jsonResponse({ status: "REJECTED", error: "no face", errorCode: "face_not_detected" })
+    )).resolves.toMatchObject({ status: "failed", error: expect.stringMatching(/no face/) });
+  });
+
+  it("retries transient status GET but never duplicates create POST", async () => {
+    const sleep = vi.fn(async () => {});
+    const statusFetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ message: "temporary" }, 503))
+      .mockResolvedValueOnce(jsonResponse({ status: "PENDING", progress_percent: 20 }));
+    await getSyncLipSync("job-123", "secret", statusFetch as typeof fetch, sleep);
+    expect(statusFetch).toHaveBeenCalledTimes(2);
+  });
+});
 ```
 
 - [ ] **Step 2: Run and confirm RED**
 
 ```bash
-pnpm exec vitest run tests/sync-lipsync.test.ts
+pnpm exec vitest run apps/api/src/sync_lipsync.test.ts
 ```
 
-Expected: FAIL because adapter is missing.
+- [ ] **Step 3: Implement raw HTTP adapter**
 
-- [ ] **Step 3: Implement `sync_lipsync.ts` with native fetch**
-
-Use:
+Create `sync_lipsync.ts` with:
 
 ```ts
 const SYNC_BASE_URL = "https://api.sync.so/v2";
 const SYNC_MODEL = "sync-3";
 const REQUEST_TIMEOUT_MS = 30_000;
+const STATUS_RETRY_MS = [500, 1000] as const;
 ```
 
-`createSyncLipSync` must POST exactly:
+`createSyncLipSync` POST body is exactly:
 
 ```json
 {
@@ -653,7 +716,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
 }
 ```
 
-Require a non-empty string `id` from a 2xx response. Do not auto-retry this POST.
+Use `x-api-key` and JSON headers. Require a non-empty provider `id`. **Do not wrap this POST in a retry loop.**
 
 `getSyncLipSync` calls:
 
@@ -661,9 +724,14 @@ Require a non-empty string `id` from a 2xx response. Do not auto-retry this POST
 GET /v2/generate/{id}?include=progress
 ```
 
-Normalize `COMPLETED` to `completed`; `FAILED` and `REJECTED` to `failed`; every other nonterminal provider status to `waiting`. Validate completed `outputUrl` as HTTPS. Extract provider `error`/`errorCode` for user-facing failure without exposing request headers.
+Use a fresh 30-second timeout per GET attempt. Retry only `429`, `500`, `502`, `503`, `504` status responses, maximum three attempts total. Normalize:
+- `COMPLETED` → `completed`; require HTTPS `outputUrl`;
+- `FAILED` / `REJECTED` → `failed`;
+- every other provider status → `waiting`.
 
-- [ ] **Step 4: Add secret config**
+Return `progress_percent` as `progress` when finite. Failure text may combine short `error` and `errorCode`; never return headers or secret values.
+
+- [ ] **Step 4: Add config and offline warning**
 
 In `config.ts`:
 
@@ -671,7 +739,7 @@ In `config.ts`:
 SYNC_API_KEY: optionalNonEmpty.optional(),
 ```
 
-Add a warning when missing:
+After Agnes warning:
 
 ```ts
 if (!config.SYNC_API_KEY) {
@@ -679,9 +747,9 @@ if (!config.SYNC_API_KEY) {
 }
 ```
 
-Do not make startup fail when the key is absent; the rest of the editor must remain usable.
+Missing Sync key must not stop the server.
 
-- [ ] **Step 5: Add Render secret declaration and docs**
+- [ ] **Step 5: Add Render secret and deployment docs**
 
 In `render.yaml`:
 
@@ -690,48 +758,54 @@ In `render.yaml`:
         sync: false
 ```
 
-In `RENDER_SETTINGS.md`, document `SYNC_API_KEY` as a server-side secret used only for manual lip-sync. Do not put a real key in Git.
+In `RENDER_SETTINGS.md`, document `SYNC_API_KEY` as a server-only manual lip-sync secret. Never commit a real key.
 
-- [ ] **Step 6: Run test/typecheck and commit**
+- [ ] **Step 6: Run tests/typecheck and commit**
 
 ```bash
-pnpm exec vitest run tests/sync-lipsync.test.ts
+pnpm exec vitest run apps/api/src/sync_lipsync.test.ts
 pnpm typecheck
-git add apps/api/src/sync_lipsync.ts apps/api/src/config.ts render.yaml RENDER_SETTINGS.md tests/sync-lipsync.test.ts
+git add apps/api/src/sync_lipsync.ts apps/api/src/sync_lipsync.test.ts apps/api/src/config.ts render.yaml RENDER_SETTINGS.md
 git commit -m "feat: add Sync Labs lip-sync adapter"
 ```
 
 ---
 
-### Task 6: Manual lip-sync server routes using the selected music segment
+### Task 6: Manual lip-sync server routes using the selected timeline music slice
 
 **Files:**
 - Modify: `apps/api/src/server.ts`
+- Modify: `apps/api/src/clips.ts`
 - Modify: `apps/web/src/lib/api.ts`
-- Modify: `tests/text-to-image-lipsync-ui.test.mjs`
+- Modify: `apps/web/src/components/Sidebar.contract.test.ts`
 
 **Interfaces:**
-- Produces: `POST /api/generate/lipsync` returning `{ id: string }`.
-- Produces: `GET /api/lipsync/tasks/:id` returning the existing shared `Task` shape.
-- Consumes: `LipSyncRequest`, existing `sliceAudio`, `createSyncLipSync`, `getSyncLipSync`.
+- Produces: `POST /api/generate/lipsync -> { id }`.
+- Produces: `GET /api/lipsync/tasks/:id -> Task`.
+- Produces: `startLipSync`, `getLipSyncTask`, `pollLipSyncTask` in the browser API.
+- Consumes: `LipSyncRequest`, existing `sliceAudio`, Sync adapter, existing clip saver/rehosting.
 
-- [ ] **Step 1: Add failing route/client source assertions**
+- [ ] **Step 1: Add failing route/client/manual-slice assertions**
 
-Append:
+Extend `Sidebar.contract.test.ts`:
 
-```js
-assert.match(server, /\/api\/generate\/lipsync/);
-assert.match(server, /sliceAudio\(body\.audioUrl, body\.start, body\.end\)/);
-assert.match(server, /\/api\/lipsync\/tasks\/:id/);
-assert.match(api, /startLipSync/);
-assert.match(api, /pollLipSyncTask/);
+```ts
+it("routes manual lip-sync through the selected song slice", async () => {
+  const server = await read("apps/api/src/server.ts");
+  const api = await read("apps/web/src/lib/api.ts");
+  expect(server).toMatch(/\/api\/generate\/lipsync/);
+  expect(server).toMatch(/sliceAudio\(body\.audioUrl, body\.start, body\.end\)/);
+  expect(server).toMatch(/\/api\/lipsync\/tasks\/:id/);
+  expect(api).toMatch(/startLipSync/);
+  expect(api).toMatch(/pollLipSyncTask/);
+});
 ```
 
-Run targeted test and confirm RED.
+Run and confirm RED.
 
 - [ ] **Step 2: Add manual start route**
 
-Import `LipSyncRequest`, `createSyncLipSync`, and `getSyncLipSync`. Add:
+Import `LipSyncRequest`, `createSyncLipSync`, `getSyncLipSync`. Add:
 
 ```ts
 app.post(
@@ -752,14 +826,16 @@ app.post(
 );
 ```
 
-This route is the only place that chooses the song segment. The browser sends the selected clip's exact timeline bounds; the provider never receives the entire song unless the selected clip spans it.
+No other server route calls this route/function automatically.
 
 - [ ] **Step 3: Add status route mapped to shared `Task`**
 
 ```ts
 app.get("/api/lipsync/tasks/:id", async (req, reply) => {
   if (!config.SYNC_API_KEY) return reply.code(503).send({ error: "Manual lip-sync is not configured." });
-  const { id } = z.object({ id: z.string().min(1).max(200).regex(/^[a-zA-Z0-9_-]+$/) }).parse(req.params);
+  const { id } = z.object({
+    id: z.string().min(1).max(200).regex(/^[a-zA-Z0-9_-]+$/),
+  }).parse(req.params);
   const result = await getSyncLipSync(id, config.SYNC_API_KEY);
   return reply.send({
     id,
@@ -772,6 +848,8 @@ app.get("/api/lipsync/tasks/:id", async (req, reply) => {
 ```
 
 - [ ] **Step 4: Add browser API helpers**
+
+In `apps/web/src/lib/api.ts`:
 
 ```ts
 export async function startLipSync(req: LipSyncRequest): Promise<{ id: string }> {
@@ -797,29 +875,43 @@ export async function pollLipSyncTask(id: string, intervalMs = 2500, timeoutMs =
 }
 ```
 
-- [ ] **Step 5: Extend clip-save validation for lip-sync metadata**
+- [ ] **Step 5: Persist lip-sync metadata in clip library**
 
-Add optional fields to `SaveClipBody`:
+Extend server `SaveClipBody`:
 
 ```ts
 lipSyncTaskId: z.string().nullable().optional(),
 lipSyncModel: z.string().nullable().optional(),
 ```
 
-Pass these through `saveClip` / `SavedClip` so the Library records how a clip was processed.
+Extend `saveClip` input in `apps/api/src/clips.ts`:
 
-- [ ] **Step 6: Run targeted tests and commit**
+```ts
+lipSyncTaskId?: string | null;
+lipSyncModel?: string | null;
+```
+
+Add to the saved object:
+
+```ts
+lipSyncTaskId: input.lipSyncTaskId,
+lipSyncModel: input.lipSyncModel,
+```
+
+Do not change the clip `source` during save.
+
+- [ ] **Step 6: Run tests/typecheck and commit**
 
 ```bash
-pnpm exec vitest run tests/sync-lipsync.test.ts tests/text-to-image-lipsync-ui.test.mjs
+pnpm exec vitest run apps/api/src/sync_lipsync.test.ts apps/web/src/components/Sidebar.contract.test.ts
 pnpm typecheck
-git add apps/api/src/server.ts apps/web/src/lib/api.ts apps/api/src/clips.ts packages/shared/src/index.ts tests/text-to-image-lipsync-ui.test.mjs
+git add apps/api/src/server.ts apps/api/src/clips.ts apps/web/src/lib/api.ts apps/web/src/components/Sidebar.contract.test.ts
 git commit -m "feat: add manual music-segment lip-sync routes"
 ```
 
 ---
 
-### Task 7: Browser lip-sync controller, stale-result safety, resume, and manual button
+### Task 7: Browser manual lip-sync controller, stale-result safety, resume, and button
 
 **Files:**
 - Create: `apps/web/src/lib/lipsync.ts`
@@ -827,32 +919,40 @@ git commit -m "feat: add manual music-segment lip-sync routes"
 - Modify: `apps/web/src/lib/store.ts`
 - Modify: `apps/web/src/routes/Editor.tsx`
 - Modify: `apps/web/src/styles/app.css`
-- Modify: `tests/text-to-image-lipsync-ui.test.mjs`
+- Modify: `apps/web/src/components/Sidebar.contract.test.ts`
 
 **Interfaces:**
 - Produces: `applyLipSyncToClip(clipId)` and `resumeInflightLipSyncJobs()`.
-- Consumes: store `audioUrl`, selected clip timing/video URL, `startLipSync`, `pollLipSyncTask`, `saveClipToServer`.
+- Consumes: store `audioUrl`, selected clip `start/end/videoUrl`, lip-sync browser API, existing `saveClipToServer`.
 
-- [ ] **Step 1: Extend source test and confirm RED**
+- [ ] **Step 1: Add failing manual-only UI/resume assertions**
 
-Append:
-
-```js
-const lipsync = await readFile("apps/web/src/lib/lipsync.ts", "utf8").catch(() => "");
-const editor = await readFile("apps/web/src/routes/Editor.tsx", "utf8");
-assert.match(sidebar, /Lip-sync to song segment/);
-assert.match(lipsync, /applyLipSyncToClip/);
-assert.match(lipsync, /pollLipSyncTask/);
-assert.match(lipsync, /lipSyncSourceVideoUrl/);
-assert.match(editor, /resumeInflightLipSyncJobs/);
-assert.doesNotMatch(editor, /applyLipSyncToClip\(/, "Editor mount must resume only; it must not start new lip-sync work automatically");
-```
-
-- [ ] **Step 2: Implement `applyLipSyncToClip`**
-
-Core behavior:
+Extend the contract test:
 
 ```ts
+it("starts lip-sync only from the manual button and resumes existing tasks separately", async () => {
+  const sidebar = await read("apps/web/src/components/Sidebar.tsx");
+  const editor = await read("apps/web/src/routes/Editor.tsx");
+  const controller = await read("apps/web/src/lib/lipsync.ts").catch(() => "");
+  expect(sidebar).toMatch(/Lip-sync to song segment/);
+  expect(sidebar).toMatch(/applyLipSyncToClip/);
+  expect(controller).toMatch(/startLipSync/);
+  expect(controller).toMatch(/pollLipSyncTask/);
+  expect(controller).toMatch(/lipSyncSourceVideoUrl/);
+  expect(editor).toMatch(/resumeInflightLipSyncJobs/);
+  expect(editor).not.toMatch(/applyLipSyncToClip\(/);
+});
+```
+
+Run and confirm RED.
+
+- [ ] **Step 2: Implement start path in `apps/web/src/lib/lipsync.ts`**
+
+```ts
+import { SYNC_LIPSYNC_MODEL, getErrorMessage, type Clip, type Task } from "@mvs/shared";
+import { useStore } from "./store.js";
+import { pollLipSyncTask, saveClipToServer, startLipSync } from "./api.js";
+
 export async function applyLipSyncToClip(clipId: string): Promise<void> {
   const state = useStore.getState();
   const clip = state.clips.find((item) => item.id === clipId);
@@ -881,64 +981,77 @@ export async function applyLipSyncToClip(clipId: string): Promise<void> {
     });
     await finishLipSyncPoll(clipId, started.id, sourceVideoUrl);
   } catch (error) {
-    const message = getErrorMessage(error);
-    useStore.getState().updateClip(clipId, { lipSyncStatus: "failed", lastError: message });
+    useStore.getState().updateClip(clipId, {
+      lipSyncStatus: "failed",
+      lastError: getErrorMessage(error),
+    });
     throw error;
   }
 }
 ```
 
-- [ ] **Step 3: Implement one completion function used by start and resume**
+- [ ] **Step 3: Add completion helper with stale-result protection and durable save**
 
-`finishLipSyncPoll(clipId, taskId, sourceVideoUrl)` must:
-1. call `pollLipSyncTask`;
-2. reject non-success/no-output;
+Use one `taskOutputUrl(task)` helper in this file, matching existing scheduler semantics. `finishLipSyncPoll(clipId, taskId, sourceVideoUrl)` must:
+1. `await pollLipSyncTask(taskId)`;
+2. reject failed/non-output result;
 3. re-read current clip;
-4. ignore completion when `current.lipSyncTaskId !== taskId` **or** `current.videoUrl !== sourceVideoUrl`;
-5. call `saveClipToServer` with the completed provider URL so existing server rehosting copies it to durable storage;
-6. update the clip to the returned durable `saved.videoUrl`, `lipSyncStatus: "ready"`, `lipSyncModel: SYNC_LIPSYNC_MODEL`, and keep its original `source`.
+4. ignore completion unless `current.lipSyncTaskId === taskId` **and** `current.videoUrl === sourceVideoUrl`;
+5. call `saveClipToServer` with provider output, preserving `current.source`, `current.model`, prompt, duration, section label, and adding `lipSyncTaskId` / `lipSyncModel`;
+6. update `videoUrl` to the returned durable `saved.videoUrl`, `lipSyncStatus: "ready"`, `lipSyncModel: SYNC_LIPSYNC_MODEL`, and clear `lastError`.
 
-Use the existing task URL extraction convention:
+Core durable save:
 
 ```ts
-const output = final.output;
-const resultUrl = typeof output === "string"
-  ? output
-  : Array.isArray(output)
-    ? output[0]
-    : output?.videoUrl ?? output?.url;
+const saved = await saveClipToServer({
+  id: current.id,
+  name: current.prompt?.slice(0, 60) || "lip-synced clip",
+  videoUrl: resultUrl,
+  source: current.source,
+  prompt: current.prompt ?? null,
+  duration: current.end - current.start,
+  sectionLabel: current.sectionLabel ?? null,
+  model: current.model ?? null,
+  generationTaskId: current.generationTaskId ?? null,
+  lipSyncTaskId: taskId,
+  lipSyncModel: SYNC_LIPSYNC_MODEL,
+});
 ```
 
-- [ ] **Step 4: Implement resume without automatic new generation**
+- [ ] **Step 4: Resume only already-started provider jobs**
+
+Avoid a one-time global boolean; track active provider IDs so loading another project in the same browser session can still resume its tasks:
 
 ```ts
-let resumedLipSync = false;
+const activeResumeIds = new Set<string>();
+
 export function resumeInflightLipSyncJobs(): void {
-  if (resumedLipSync) return;
-  resumedLipSync = true;
   for (const clip of useStore.getState().clips) {
-    if (clip.lipSyncStatus === "generating" && clip.lipSyncTaskId && clip.lipSyncSourceVideoUrl) {
-      void finishLipSyncPoll(clip.id, clip.lipSyncTaskId, clip.lipSyncSourceVideoUrl);
-    }
+    if (
+      clip.lipSyncStatus !== "generating" ||
+      !clip.lipSyncTaskId ||
+      !clip.lipSyncSourceVideoUrl ||
+      activeResumeIds.has(clip.lipSyncTaskId)
+    ) continue;
+    activeResumeIds.add(clip.lipSyncTaskId);
+    void finishLipSyncPoll(clip.id, clip.lipSyncTaskId, clip.lipSyncSourceVideoUrl)
+      .finally(() => activeResumeIds.delete(clip.lipSyncTaskId!));
   }
 }
 ```
 
-This only reconnects to an existing provider task. It never calls `startLipSync`.
+This function never calls `startLipSync`.
 
-- [ ] **Step 5: Normalize stale saved project state**
+- [ ] **Step 5: Normalize persisted lip-sync state**
 
-In `store.ts` snapshot restore, when a saved clip has `lipSyncStatus` of `queued` with no task ID, reset it to `failed`/idle rather than pretending it is resumable. Preserve `generating` only when both `lipSyncTaskId` and `lipSyncSourceVideoUrl` exist.
+In `store.ts` snapshot restore:
+- preserve `generating` only when both `lipSyncTaskId` and `lipSyncSourceVideoUrl` exist;
+- convert orphaned `queued`/`generating` state to `failed` (or unset/idle) while preserving the current playable `videoUrl`;
+- never clear a ready clip's video just because a lip-sync task became stale.
 
 - [ ] **Step 6: Resume from Editor mount**
 
-Change:
-
-```ts
-useEffect(() => { resumeInflightJobs(); }, []);
-```
-
-to:
+Import `resumeInflightLipSyncJobs` and change mount effect to:
 
 ```ts
 useEffect(() => {
@@ -947,12 +1060,25 @@ useEffect(() => {
 }, []);
 ```
 
-- [ ] **Step 7: Add the manual Sidebar button**
+This reconnects to existing tasks only.
 
-Show only for a ready selected clip with a video and loaded project audio. Button copy:
+- [ ] **Step 7: Add the explicit manual Sidebar button**
+
+Show for a selected clip only when:
+- `clip.videoUrl` exists;
+- project `audioUrl` exists;
+- clip is not currently lip-syncing.
+
+Button copy:
 
 ```text
 Lip-sync to song segment
+```
+
+Display context immediately above/below it:
+
+```text
+Song audio 12.50s–17.25s
 ```
 
 On click only:
@@ -963,70 +1089,66 @@ void applyLipSyncToClip(clip.id)
   .catch((error) => toast.error(`Lip-sync failed: ${getErrorMessage(error)}`));
 ```
 
-While `lipSyncStatus` is `queued`/`generating`, disable the button and show `Lip-syncing…`. Display the exact segment context such as `Song audio 12.50s–17.25s` so the manual behavior is obvious.
+While queued/generating, show `Lip-syncing…`. Do not call `applyLipSyncToClip` from any `useEffect`, upload handler, video generation completion, clip selection handler, play handler, or render handler.
 
-Do not call `applyLipSyncToClip` from `useEffect`, upload handlers, generation completion, timeline selection, playback, or render.
-
-- [ ] **Step 8: Run web tests/build and commit**
+- [ ] **Step 8: Run test/typecheck/web build and commit**
 
 ```bash
-pnpm exec vitest run tests/text-to-image-lipsync-ui.test.mjs
+pnpm exec vitest run apps/web/src/components/Sidebar.contract.test.ts
 pnpm typecheck
 pnpm --filter @mvs/web build
-git add apps/web/src/lib/lipsync.ts apps/web/src/components/Sidebar.tsx apps/web/src/lib/store.ts apps/web/src/routes/Editor.tsx apps/web/src/styles/app.css tests/text-to-image-lipsync-ui.test.mjs
+git add apps/web/src/lib/lipsync.ts apps/web/src/components/Sidebar.tsx apps/web/src/lib/store.ts apps/web/src/routes/Editor.tsx apps/web/src/styles/app.css apps/web/src/components/Sidebar.contract.test.ts
 git commit -m "feat: add manual selected-clip lip-sync workflow"
 ```
 
 ---
 
-### Task 8: Preserve original-song final render and complete verification
+### Task 8: Protect final soundtrack, run full verification, and prepare PR
 
 **Files:**
 - Modify: `tests/final-render-policy.test.mjs`
-- Review only unless test exposes a regression: `apps/api/src/render.ts`
-- Review: all files changed above
+- Review only unless regression is found: `apps/api/src/render.ts`
+- Review: all feature files above
 
 **Interfaces:**
-- Confirms lip-sync changes affect visual clip media only; final audio remains the uploaded song.
+- Confirms lip-sync changes modify visual clip media only and preserve original uploaded song audio in final render.
 
-- [ ] **Step 1: Strengthen final-render regression before any renderer edit**
+- [ ] **Step 1: Strengthen original-song regression**
 
-Add an assertion/comment explaining that lip-sync metadata must not alter audio mapping:
+Add to `tests/final-render-policy.test.mjs`:
 
 ```js
 assert.match(render, /"-map", `\$\{audioIdx\}:a`/, "final render must always map original uploaded song audio");
 assert.doesNotMatch(render, /lipSyncTaskId|lipSyncModel/, "renderer must not switch audio behavior based on lip-sync metadata");
 ```
 
-Run:
+Run explicitly because root `tests/*.mjs` is outside the normal Vitest include:
 
 ```bash
-pnpm exec vitest run tests/final-render-policy.test.mjs
+node tests/final-render-policy.test.mjs
 ```
 
-Expected: PASS without changing `render.ts`. If it fails, fix only the minimum needed to restore original-song mapping.
+Expected: PASS without changing `render.ts`. If it fails, make only the smallest render fix required to restore original-song mapping.
 
-- [ ] **Step 2: Run focused provider/UI regression suite**
+- [ ] **Step 2: Run focused automated suite**
 
 ```bash
 pnpm exec vitest run \
-  tests/agnes-core.test.ts \
-  tests/agnes-image.test.ts \
-  tests/agnes-http.test.mjs \
-  tests/sync-lipsync.test.ts \
-  tests/text-to-image-lipsync-ui.test.mjs \
-  tests/final-render-policy.test.mjs
+  apps/api/src/agnes_image.test.ts \
+  apps/api/src/sync_lipsync.test.ts \
+  apps/web/src/components/Sidebar.contract.test.ts
+node tests/final-render-policy.test.mjs
 ```
 
 Expected: all PASS.
 
-- [ ] **Step 3: Run full repository tests**
+- [ ] **Step 3: Run normal repository test gate**
 
 ```bash
 pnpm test
 ```
 
-Expected: PASS.
+Expected: PASS, including the new `apps/**.test.ts` tests.
 
 - [ ] **Step 4: Run compile gates**
 
@@ -1035,11 +1157,9 @@ pnpm typecheck
 pnpm build
 ```
 
-Expected: both PASS with no new warnings that expose provider secrets.
+Expected: PASS.
 
-- [ ] **Step 5: Check accidental automatic lip-sync and secret leakage**
-
-Run:
+- [ ] **Step 5: Check automatic-start and secret-leak regressions**
 
 ```bash
 git grep -n "applyLipSyncToClip" -- apps/web/src
@@ -1048,27 +1168,27 @@ git grep -n "AGNES_API_KEY" -- apps/web || true
 ```
 
 Expected:
-- `applyLipSyncToClip` appears in the manual controller definition/import/button click path only;
-- no provider API key environment names are used in browser source.
+- `applyLipSyncToClip` appears only in its controller definition/import/manual button path;
+- no provider secret environment variable is referenced in browser source.
 
 - [ ] **Step 6: Check diff scope**
 
 ```bash
 git status --short
 git diff --stat main...HEAD
-git diff main...HEAD -- render.yaml packages/shared/src/index.ts apps/api/src apps/web/src tests RENDER_SETTINGS.md docs/superpowers/plans
+git diff main...HEAD -- render.yaml packages/shared/src/index.ts apps/api/src apps/web/src tests/final-render-policy.test.mjs RENDER_SETTINGS.md docs/superpowers/plans
 ```
 
-Verify no unrelated audio-analysis/S3 changes and no provider secret values are committed.
+Verify no unrelated audio-analysis/S3 behavior changed and no secret values were committed.
 
-- [ ] **Step 7: Commit final test/doc adjustments**
+- [ ] **Step 7: Commit final regression change if needed**
 
 ```bash
-git add tests/final-render-policy.test.mjs
+git add tests/final-render-policy.test.mjs apps/api/src/render.ts
 git commit -m "test: protect music-track lip-sync render policy"
 ```
 
-Skip this commit only if Task 8 required no file changes after the earlier commits.
+If `render.ts` was untouched, only stage the test file. If the test already contained the exact assertion and no file changed, skip this commit.
 
 - [ ] **Step 8: Open PR**
 
@@ -1078,22 +1198,22 @@ PR title:
 Add Text-to-Image and manual music-track lip-sync
 ```
 
-PR body must state:
+PR body states:
 - Text → Image uses Agnes Image 2.1 Flash and auto-saves to Images Library;
 - manual lip-sync uses Sync Labs `sync-3` and only the selected clip's uploaded-song slice;
 - lip-sync never starts automatically;
 - final render still uses the original uploaded song;
-- deployment requires a new server secret `SYNC_API_KEY`;
-- test, typecheck, and build commands run and their results.
+- deployment requires new server secret `SYNC_API_KEY`;
+- exact `pnpm test`, `pnpm typecheck`, and `pnpm build` results.
 
 ## Live Deployment Acceptance Check
 
-After the PR is merged and Render has `SYNC_API_KEY` configured, perform these checks in order:
+After the PR is merged and Render has `SYNC_API_KEY` configured:
 
 1. Upload a song and confirm timeline/audio playback still works.
-2. Select a clip, choose **Text → Image**, generate a landscape image, and confirm it appears in **Library → Images** after reload.
-3. Click **Use as Start Image**, enter a motion prompt, generate the video through the existing Image → Video flow, and confirm the clip becomes ready.
-4. Click **Lip-sync to song segment** manually and confirm the displayed audio range matches the clip's timeline start/end.
-5. Confirm the completed lip-synced clip remains playable after a page reload, proving it was rehosted to durable storage.
-6. Render the project and confirm the audible soundtrack is the original uploaded song, not audio embedded in individual provider clips.
-7. Repeat a Text → Video request during an Agnes 503 condition or mocked equivalent and confirm bounded retry occurs instead of immediate one-shot failure.
+2. Select a clip, choose **Text → Image**, generate a landscape image, reload, and confirm it appears in **Library → Images**.
+3. Click **Use as Start Image**, enter a motion prompt, generate through the existing Image → Video flow, and confirm the clip becomes ready.
+4. Click **Lip-sync to song segment** manually and confirm the displayed audio range exactly matches the selected clip's timeline start/end.
+5. Confirm the completed lip-synced clip remains playable after reload, proving the provider result was rehosted to durable storage.
+6. Render the project and confirm the audible soundtrack is the original uploaded song, not audio embedded in provider clips.
+7. Exercise an Agnes 503 condition (or the automated mock) and confirm bounded retry occurs instead of the old immediate one-shot failure.
