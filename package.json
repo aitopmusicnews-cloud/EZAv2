@@ -19,7 +19,7 @@
   "scripts": {
     "dev": "pnpm --filter @mvs/shared build && pnpm -r --parallel run dev",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm --filter @mvs/shared build && pnpm -r typecheck",
     "dev:web": "pnpm --filter @mvs/web dev",
     "dev:api": "pnpm --filter @mvs/api dev",
     "dev:shared": "pnpm --filter @mvs/shared dev",
