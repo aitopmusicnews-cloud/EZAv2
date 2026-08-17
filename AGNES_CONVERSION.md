@@ -27,8 +27,10 @@ Timeline duration remains authoritative. Agnes requests use 24 fps, valid `8n+1`
 
 ## Audio-analysis reliability
 
-Song analysis now completes inside the upload request and returns the finished analysis to the browser. The active UI no longer starts a detached analysis task and polls indefinitely. A failure returns a real error instead of leaving the upload card stuck on `Analyzing…`.
+Song analysis now completes inside the upload request and returns the finished analysis to the browser. The active UI no longer starts a detached analysis task and polls indefinitely. A failure returns a real error instead of leaving the upload card stuck on `Analyzing…`. Sparse or ambient audio with no reliable beat grid falls back to a safe full-song section instead of crashing section clustering.
 
 ## Render deployment
+
+The workspace `@mvs/shared` package builds to `packages/shared/dist` before the web/API packages compile, matching the original monorepo build boundary and avoiding strict TypeScript resolution failures on Render.
 
 Use the included `render.yaml`. Set `AGNES_API_KEY` in Render. For persistent projects/media across service restarts, configure the existing S3 storage variables or a Render persistent disk rather than relying on ephemeral local storage.

@@ -90,6 +90,13 @@ def _detect_sections(
     """
     import librosa
     import numpy as np
+
+    # Sparse/ambient material can legitimately produce no reliable beat grid.
+    # In that case, return one safe full-song section instead of sending an
+    # empty feature matrix into librosa.segment.agglomerative().
+    if len(beat_frames) < 2:
+        return [{"start": 0.0, "end": float(duration), "label": "section 1"}]
+
     # Beat-synced features
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
     mfcc_sync = librosa.util.sync(mfcc, beat_frames, aggregate=np.mean)
@@ -104,6 +111,8 @@ def _detect_sections(
         return (x - m) / s
 
     features = np.vstack([zscore(chroma_sync), zscore(mfcc_sync), zscore(rms_sync)])
+    if features.shape[1] < 2:
+        return [{"start": 0.0, "end": float(duration), "label": "section 1"}]
 
     # Auto-pick k unless caller forced one. ~1 boundary per 25s, clamped to
     # [4, 12] — covers a 2-min single (4 sections) up to a 5-min track (12).
