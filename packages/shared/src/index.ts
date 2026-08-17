@@ -7,8 +7,13 @@ export function getErrorMessage(err: unknown): string {
 }
 
 export const AGNES_VIDEO_MODEL = "agnes-video-v2.0" as const;
+export const AGNES_IMAGE_MODEL = "agnes-image-2.1-flash" as const;
+export const SYNC_LIPSYNC_MODEL = "sync-3" as const;
 export type GenerationModel = typeof AGNES_VIDEO_MODEL;
+export type ImageGenerationModel = typeof AGNES_IMAGE_MODEL;
+export type LipSyncModel = typeof SYNC_LIPSYNC_MODEL;
 export type ActiveClipSource = "textToVideo" | "imageToVideo" | "keyframeToVideo" | "library" | "upload";
+export type LipSyncStatus = "idle" | "queued" | "generating" | "ready" | "failed";
 
 export const AudioSection = z.object({
   start: z.number(),
@@ -46,6 +51,10 @@ export const Clip = z.object({
   keyframeEndUrl: z.string().optional(),
   lastError: z.string().optional(),
   imagePrompt: z.string().optional(),
+  lipSyncTaskId: z.string().optional(),
+  lipSyncStatus: z.enum(["idle", "queued", "generating", "ready", "failed"]).optional(),
+  lipSyncSourceVideoUrl: z.string().optional(),
+  lipSyncModel: z.string().optional(),
 });
 export type Clip = z.infer<typeof Clip>;
 
@@ -105,6 +114,23 @@ export const TextToVideoRequest = z.object({
 });
 export type TextToVideoRequest = z.infer<typeof TextToVideoRequest>;
 
+export const TextToImageRequest = z.object({
+  promptText: z.string().trim().min(1).max(4000),
+  size: z.string().regex(/^\d{3,4}x\d{3,4}$/).default("1536x864"),
+});
+export type TextToImageRequest = z.infer<typeof TextToImageRequest>;
+
+export const LipSyncRequest = z.object({
+  videoUrl: z.string().url(),
+  audioUrl: z.string().url(),
+  start: z.number().finite().min(0),
+  end: z.number().finite().positive(),
+}).refine((value) => value.end > value.start, {
+  message: "lip-sync end must be greater than start",
+  path: ["end"],
+});
+export type LipSyncRequest = z.infer<typeof LipSyncRequest>;
+
 export interface SavedClip {
   id: string;
   name: string;
@@ -117,6 +143,8 @@ export interface SavedClip {
   folderId?: string | null;
   model?: string | null;
   generationTaskId?: string | null;
+  lipSyncTaskId?: string | null;
+  lipSyncModel?: string | null;
 }
 
 export interface SavedImage {
@@ -171,4 +199,3 @@ export interface Task {
   error?: string;
   errorCode?: string;
 }
-
