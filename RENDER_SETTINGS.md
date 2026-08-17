@@ -26,8 +26,8 @@ Required environment values:
 
 ```text
 AGNES_API_KEY=<secret>
-PUBLIC_BASE_URL=https://ez-ai-agnes2-0-video-maker.onrender.com
-WEB_ORIGIN=https://ez-ai-agnes2-0-video-maker.onrender.com
+PUBLIC_BASE_URL=https://ezav2.onrender.com
+WEB_ORIGIN=https://ezav2.onrender.com
 WEB_DIST_DIR=apps/web/dist
 STORAGE_BACKEND=local
 STORAGE_DIR=./storage
