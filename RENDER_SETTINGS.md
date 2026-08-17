@@ -26,6 +26,7 @@ Required environment values:
 
 ```text
 AGNES_API_KEY=<secret>
+SYNC_API_KEY=<secret>
 PUBLIC_BASE_URL=https://ezav2.onrender.com
 WEB_ORIGIN=https://ezav2.onrender.com
 WEB_DIST_DIR=apps/web/dist
@@ -37,6 +38,8 @@ S3_PUBLIC_URL_BASE=https://rendernodock-storage-052080186671-us-east-1-an.s3.us-
 AWS_ACCESS_KEY_ID=<secret>
 AWS_SECRET_ACCESS_KEY=<secret>
 ```
+
+`AGNES_API_KEY` stays server-side and powers Agnes Video plus Agnes Image generation. `SYNC_API_KEY` is also server-only and is used only when the user manually clicks **Lip-sync to song segment** for a selected clip. Never expose either key in browser environment variables.
 
 `STORAGE_DIR` must remain a local filesystem path even when S3 is enabled; do not put an `s3://...` URI there. S3 addressing belongs in `S3_BUCKET`, `S3_REGION`, and `S3_PUBLIC_URL_BASE`.
 
