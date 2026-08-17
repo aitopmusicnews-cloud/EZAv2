@@ -2,6 +2,8 @@ import type {
   AudioAnalysis,
   ImageToVideoRequest,
   KeyframeToVideoRequest,
+  LipSyncRequest,
+  TextToImageRequest,
   TextToVideoRequest,
   ProjectMeta,
   SavedProject,
@@ -53,6 +55,14 @@ export async function uploadVideo(file: File): Promise<{ id: string; url: string
   return jsonOrThrow(await fetch("/api/videos/upload", { method: "POST", body: fd }));
 }
 
+export async function generateTextToImage(req: TextToImageRequest): Promise<SavedImage> {
+  return jsonOrThrow(await fetch("/api/generate/text-to-image", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(req),
+  }));
+}
+
 export async function extractLastFrame(videoUrl: string, time?: number): Promise<{ url: string }> {
   return jsonOrThrow(
     await fetch("/api/videos/extract-last-frame", {
@@ -95,6 +105,28 @@ export async function startTextToVideo(req: TextToVideoRequest): Promise<{ id: s
     headers: { "content-type": "application/json" },
     body: JSON.stringify(req),
   }));
+}
+
+export async function startLipSync(req: LipSyncRequest): Promise<{ id: string }> {
+  return jsonOrThrow(await fetch("/api/generate/lipsync", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(req),
+  }));
+}
+
+export async function getLipSyncTask(id: string): Promise<Task> {
+  return jsonOrThrow(await fetch(`/api/lipsync/tasks/${encodeURIComponent(id)}`));
+}
+
+export async function pollLipSyncTask(id: string, intervalMs = 2500, timeoutMs = 20 * 60_000): Promise<Task> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const task = await getLipSyncTask(id);
+    if (task.status === "SUCCEEDED" || task.status === "FAILED" || task.status === "CANCELLED") return task;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error("lip-sync task timed out");
 }
 
 export async function getTask(id: string): Promise<Task> {
