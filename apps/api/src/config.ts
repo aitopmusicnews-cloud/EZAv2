@@ -12,6 +12,7 @@ const optionalNonEmpty = z
 
 const Env = z.object({
   AGNES_API_KEY: optionalNonEmpty.optional(),
+  SYNC_API_KEY: optionalNonEmpty.optional(),
   PORT: z.coerce.number().default(3001),
   PUBLIC_BASE_URL: z.string().url().default("http://localhost:3001"),
   // Comma-separated list of allowed CORS origins (or a single URL).
@@ -54,9 +55,12 @@ export const config = parsed.data;
 
 if (!config.AGNES_API_KEY) {
   console.warn(
-    "WARN: AGNES_API_KEY is not set. Video generation is offline. " +
+    "WARN: AGNES_API_KEY is not set. Video and image generation are offline. " +
       "Audio analysis, editing, library, and rendering still work."
   );
+}
+if (!config.SYNC_API_KEY) {
+  console.warn("WARN: SYNC_API_KEY is not set. Manual lip-sync is offline.");
 }
 if (config.STORAGE_BACKEND === "s3") {
   if (!config.S3_BUCKET || !config.S3_REGION) {
