@@ -60,8 +60,17 @@ await app.register(fastifyStatic, {
 // the directory doesn't exist (local dev), the registration is skipped — Vite
 // is the dev server and proxies /api here.
 const webDistDir = config.WEB_DIST_DIR;
-const webDistResolved = webDistDir ? resolve(webDistDir) : null;
-const serveSpa = !!(webDistResolved && existsSync(webDistResolved));
+const webDistCandidates = webDistDir
+  ? [
+      // Works when the API is launched from the repository root.
+      resolve(webDistDir),
+      // pnpm --filter @mvs/api start runs the lifecycle script from apps/api.
+      // Treat WEB_DIST_DIR as repository-root-relative in that case too.
+      resolve(process.cwd(), "../..", webDistDir),
+    ]
+  : [];
+const webDistResolved = webDistCandidates.find((candidate) => existsSync(candidate)) ?? null;
+const serveSpa = !!webDistResolved;
 if (serveSpa) {
   await app.register(fastifyStatic, {
     root: webDistResolved!,
