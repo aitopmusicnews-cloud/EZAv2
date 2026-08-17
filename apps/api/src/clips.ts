@@ -17,6 +17,8 @@ export async function saveClip(input: {
   folderId?: string | null;
   model?: string | null;
   generationTaskId?: string | null;
+  lipSyncTaskId?: string | null;
+  lipSyncModel?: string | null;
 }): Promise<SavedClip> {
   // rehostExternalUrl is the single source of truth for "make this URL
   // durable on our storage backend": owned URLs (already on /storage or
@@ -38,6 +40,8 @@ export async function saveClip(input: {
     folderId: input.folderId,
     model: input.model,
     generationTaskId: input.generationTaskId,
+    lipSyncTaskId: input.lipSyncTaskId,
+    lipSyncModel: input.lipSyncModel,
   };
 
   await storage.saveJson(clipMetaKey(input.id), saved);
