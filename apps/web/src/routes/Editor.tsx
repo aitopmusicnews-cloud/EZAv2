@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { useStore } from "../lib/store.js";
 import { useKeyboardShortcuts } from "../lib/keyboard.js";
 import { resumeInflightJobs } from "../lib/scheduler.js";
+import { resumeInflightLipSyncJobs } from "../lib/lipsync.js";
 import { getWs } from "../lib/wavesurfer-ref.js";
 import { Header } from "../components/Header.js";
 import { LeftRail } from "../components/LeftRail.js";
@@ -52,7 +53,10 @@ export function Editor() {
     { key: "0", handler: () => zoomFit() },
   ], [togglePlay, setPlayhead, selectClip, splitAtPlayhead, selectedClip, mergeWithRight, zoomIn, zoomOut, zoomFit]);
   useKeyboardShortcuts(shortcuts);
-  useEffect(() => { resumeInflightJobs(); }, []);
+  useEffect(() => {
+    resumeInflightJobs();
+    resumeInflightLipSyncJobs();
+  }, []);
 
   return (
     <div className="app">
