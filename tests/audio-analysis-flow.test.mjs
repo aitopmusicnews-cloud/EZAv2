@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+const server=await readFile('apps/api/src/server.ts','utf8');
+const api=await readFile('apps/web/src/lib/api.ts','utf8');
+const drop=await readFile('apps/web/src/components/TimelineDropzone.tsx','utf8');
+const config=await readFile('apps/api/src/config.ts','utf8');
+const env=await readFile('.env.example','utf8');
+assert.match(server,/reply\.send\(\{[^}]*analysis[^}]*\}\)/s);
+assert.doesNotMatch(server,/analyzeFromUrl\([^\n]+\)\.catch/);
+assert.doesNotMatch(api,/pollAnalysis/);
+assert.doesNotMatch(drop,/pollAnalysis/);
+assert.doesNotMatch(config,/MODAL_AUDIO_URL/);
+assert.doesNotMatch(env,/MODAL_AUDIO_URL/);
+console.log('audio analysis flow tests passed');

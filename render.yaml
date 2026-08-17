@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: ez-ai-agnes2-0-video-maker
+    runtime: node
+    buildCommand: python3 -m pip install -r audio_analysis/requirements.txt && pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm --filter @mvs/api start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.16.0
+      - key: AGNES_API_KEY
+        sync: false
+      - key: PUBLIC_BASE_URL
+        value: https://ez-ai-agnes2-0-video-maker.onrender.com
+      - key: WEB_ORIGIN
+        value: https://ez-ai-agnes2-0-video-maker.onrender.com
+      - key: WEB_DIST_DIR
+        value: apps/web/dist
+      - key: STORAGE_BACKEND
+        value: local
+      - key: STORAGE_DIR
+        value: ./storage

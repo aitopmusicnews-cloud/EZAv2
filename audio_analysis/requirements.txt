@@ -1,0 +1,5 @@
+# Local song analysis runtime. No cloud/FastAPI service is required.
+librosa>=0.11,<0.12
+soundfile>=0.12,<0.14
+numpy>=1.26
+scipy>=1.13
