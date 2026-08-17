@@ -3,12 +3,23 @@ import { useStore } from "../lib/store.js";
 import type { Clip } from "@mvs/shared";
 import { AGNES_VIDEO_MODEL, getErrorMessage } from "@mvs/shared";
 import { enqueueGeneration, type GenerationSource } from "../lib/scheduler.js";
-import { extractLastFrame, listSavedClips, type SavedClip } from "../lib/api.js";
+import {
+  extractLastFrame,
+  generateTextToImage,
+  listSavedClips,
+  type SavedClip,
+  type SavedImage,
+} from "../lib/api.js";
+import { applyLipSyncToClip } from "../lib/lipsync.js";
 import { AssetUploader } from "./AssetUploader.js";
 import { toast } from "../lib/toast.js";
+import "../styles/generation-tools.css";
 
-const SOURCES: Array<{ value: GenerationSource | "library"; label: string; desc: string }> = [
+type SidebarMode = GenerationSource | "textToImage" | "library";
+
+const SOURCES: Array<{ value: SidebarMode; label: string; desc: string }> = [
   { value: "textToVideo", label: "Text → Video", desc: "Describe the scene and let Agnes create the visual." },
+  { value: "textToImage", label: "Text → Image", desc: "Create a reusable still image with Agnes before animating it." },
   { value: "imageToVideo", label: "Image → Video", desc: "Animate a character or lookbook reference with Agnes." },
   { value: "keyframeToVideo", label: "Keyframe → Video", desc: "Transition between a start and end reference frame." },
   { value: "library", label: "Clip library", desc: "Reuse a saved clip without launching generation." },
@@ -18,12 +29,27 @@ export function Sidebar() {
   const selectedId = useStore((s) => s.selectedClipId);
   const clips = useStore((s) => s.clips);
   const analysis = useStore((s) => s.analysis);
+  const audioUrl = useStore((s) => s.audioUrl);
   const lookbook = useStore((s) => s.lookbook);
   const characterImage = useStore((s) => s.characterImageUrl);
   const addLookbook = useStore((s) => s.addLookbook);
   const updateClip = useStore((s) => s.updateClip);
   const clip = useMemo(() => clips.find((c) => c.id === selectedId) ?? null, [clips, selectedId]);
   const [extracting, setExtracting] = useState(false);
+  const [mode, setMode] = useState<SidebarMode>("textToVideo");
+  const [generatedImage, setGeneratedImage] = useState<SavedImage | null>(null);
+  const [imageGenerating, setImageGenerating] = useState(false);
+  const [imageSize, setImageSize] = useState("1536x864");
+
+  useEffect(() => {
+    if (!clip) return;
+    const next: GenerationSource | "library" =
+      clip.source === "imageToVideo" || clip.source === "keyframeToVideo" || clip.source === "library"
+        ? clip.source
+        : "textToVideo";
+    setMode(next);
+    setGeneratedImage(null);
+  }, [clip?.id]);
 
   if (!clip || !analysis) return null;
 
@@ -40,8 +66,11 @@ export function Sidebar() {
   const selectedImage = clip.archetypeUrl ?? availableImages[0];
   const endImage = clip.keyframeEndUrl;
   const canGenerate = checkCanGenerate(source, { prompt, selectedImage, endImage });
+  const isLipSyncing = clip.lipSyncStatus === "queued" || clip.lipSyncStatus === "generating";
 
-  const setSource = (next: GenerationSource | "library") => {
+  const setSource = (next: SidebarMode) => {
+    setMode(next);
+    if (next === "textToImage") return;
     updateClip(clip.id, {
       source: next,
       model: next === "library" ? undefined : AGNES_VIDEO_MODEL,
@@ -68,6 +97,37 @@ export function Sidebar() {
     });
   };
 
+  const onGenerateImage = async () => {
+    const promptText = (clip.imagePrompt ?? "").trim();
+    if (!promptText) {
+      toast.warning("Describe the image before generating");
+      return;
+    }
+    setImageGenerating(true);
+    try {
+      const saved = await generateTextToImage({ promptText, size: imageSize });
+      setGeneratedImage(saved);
+      toast.success("Image generated and saved to Library → Images");
+    } catch (error) {
+      toast.error(`Image generation failed: ${getErrorMessage(error)}`);
+    } finally {
+      setImageGenerating(false);
+    }
+  };
+
+  const onUseGeneratedImage = () => {
+    if (!generatedImage) return;
+    addLookbook(generatedImage.url);
+    updateClip(clip.id, {
+      source: "imageToVideo",
+      archetypeUrl: generatedImage.url,
+      model: AGNES_VIDEO_MODEL,
+      lastError: undefined,
+    });
+    setMode("imageToVideo");
+    toast.success("Image set as the selected clip's first-frame reference");
+  };
+
   const onExtractFrame = async () => {
     if (!clip.videoUrl) return;
     setExtracting(true);
@@ -83,25 +143,46 @@ export function Sidebar() {
     }
   };
 
+  const onLipSync = () => {
+    void applyLipSyncToClip(clip.id)
+      .then(() => toast.success("Lip-sync complete"))
+      .catch((error) => toast.error(`Lip-sync failed: ${getErrorMessage(error)}`));
+  };
+
   return (
     <>
       <div className="sidebar-header-row">
-        <span className="pill">Agnes Video</span>
+        <span className="pill">Agnes Studio</span>
         <span className="meta">{durationSec.toFixed(1)}s · {clip.id}</span>
       </div>
 
       <div className="option-group">
         <div className="label">Generation mode</div>
         <div className="select-wrap">
-          <select className="select" value={source} onChange={(e) => setSource(e.target.value as GenerationSource | "library")}>
+          <select className="select" value={mode} onChange={(e) => setSource(e.target.value as SidebarMode)}>
             {SOURCES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
           <span className="select-chevron">▾</span>
         </div>
-        <div className="select-desc">{SOURCES.find((item) => item.value === source)?.desc}</div>
+        <div className="select-desc">{SOURCES.find((item) => item.value === mode)?.desc}</div>
       </div>
 
-      {source === "library" ? (
+      {mode === "textToImage" ? (
+        <TextToImagePanel
+          prompt={clip.imagePrompt ?? ""}
+          size={imageSize}
+          generating={imageGenerating}
+          generatedImage={generatedImage}
+          onPromptChange={(value) => updateClip(clip.id, { imagePrompt: value })}
+          onSizeChange={setImageSize}
+          onGenerate={onGenerateImage}
+          onAddToLookbook={(url) => {
+            addLookbook(url);
+            toast.success("Image added to lookbook");
+          }}
+          onUseAsStartImage={onUseGeneratedImage}
+        />
+      ) : mode === "library" ? (
         <SavedClipPicker
           currentVideoUrl={clip.videoUrl}
           onPick={(saved) => updateClip(clip.id, {
@@ -111,6 +192,10 @@ export function Sidebar() {
             generationTaskId: undefined,
             model: saved.model ?? undefined,
             prompt: saved.prompt ?? undefined,
+            lipSyncTaskId: undefined,
+            lipSyncStatus: undefined,
+            lipSyncSourceVideoUrl: undefined,
+            lipSyncModel: saved.lipSyncModel ?? undefined,
             lastError: undefined,
           })}
         />
@@ -171,13 +256,6 @@ export function Sidebar() {
             </div>
           )}
 
-          {clip.lastError && (
-            <div className="error-card">
-              <div className="error-title">Last attempt</div>
-              <div className="error-message">{clip.lastError}</div>
-            </div>
-          )}
-
           <div className="sidebar-footer">
             <button
               className="generate-btn"
@@ -193,11 +271,102 @@ export function Sidebar() {
                 videoUrl: undefined,
                 thumbnailUrl: undefined,
                 generationTaskId: undefined,
+                lipSyncTaskId: undefined,
+                lipSyncStatus: undefined,
+                lipSyncSourceVideoUrl: undefined,
+                lipSyncModel: undefined,
                 lastError: undefined,
               })}>Clear clip</button>
             )}
           </div>
         </>
+      )}
+
+      {clip.videoUrl && audioUrl && (
+        <div className="option-group lipsync-panel">
+          <div className="label">Manual music lip-sync</div>
+          <div className="select-desc">Song audio {clip.start.toFixed(2)}s–{clip.end.toFixed(2)}s</div>
+          <button
+            type="button"
+            className="btn w-full lipsync-btn"
+            onClick={onLipSync}
+            disabled={isLipSyncing}
+          >
+            {isLipSyncing ? "Lip-syncing…" : "Lip-sync to song segment"}
+          </button>
+          <div className="select-desc">Starts only when you click this button. The original uploaded song stays the final soundtrack.</div>
+        </div>
+      )}
+
+      {clip.lastError && (
+        <div className="error-card">
+          <div className="error-title">Last attempt</div>
+          <div className="error-message">{clip.lastError}</div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function TextToImagePanel({
+  prompt,
+  size,
+  generating,
+  generatedImage,
+  onPromptChange,
+  onSizeChange,
+  onGenerate,
+  onAddToLookbook,
+  onUseAsStartImage,
+}: {
+  prompt: string;
+  size: string;
+  generating: boolean;
+  generatedImage: SavedImage | null;
+  onPromptChange: (value: string) => void;
+  onSizeChange: (value: string) => void;
+  onGenerate: () => void;
+  onAddToLookbook: (url: string) => void;
+  onUseAsStartImage: () => void;
+}) {
+  return (
+    <>
+      <div className="option-group">
+        <div className="label">Image prompt</div>
+        <textarea
+          className="prompt"
+          placeholder="Describe the character, setting, wardrobe, lighting, lens, composition, and visual style…"
+          value={prompt}
+          onChange={(e) => onPromptChange(e.target.value)}
+        />
+      </div>
+      <div className="option-group">
+        <div className="label">Image size</div>
+        <div className="select-wrap">
+          <select className="select" value={size} onChange={(e) => onSizeChange(e.target.value)}>
+            <option value="1536x864">Landscape · 1536×864</option>
+            <option value="1024x1024">Square · 1024×1024</option>
+            <option value="864x1536">Portrait · 864×1536</option>
+            <option value="1024x768">Landscape · 1024×768</option>
+            <option value="768x1024">Portrait · 768×1024</option>
+          </select>
+          <span className="select-chevron">▾</span>
+        </div>
+      </div>
+      <div className="sidebar-footer">
+        <button className="generate-btn" onClick={onGenerate} disabled={generating || !prompt.trim()}>
+          {generating ? "Generating image with Agnes…" : "Generate Image with Agnes"}
+        </button>
+      </div>
+      {generatedImage && (
+        <div className="generated-image-card">
+          <img className="generated-image-preview" src={generatedImage.url} alt={generatedImage.name || "Generated image"} />
+          <div className="generated-image-meta">Saved to Library → Images</div>
+          <div className="generated-image-actions">
+            <button type="button" className="btn ghost" onClick={() => onAddToLookbook(generatedImage.url)}>Add to Lookbook</button>
+            <button type="button" className="btn" onClick={onUseAsStartImage}>Use as Start Image</button>
+          </div>
+        </div>
       )}
     </>
   );
