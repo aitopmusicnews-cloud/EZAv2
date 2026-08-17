@@ -81,6 +81,7 @@ export async function applyLipSyncToClip(clipId: string): Promise<void> {
   }
 
   const sourceVideoUrl = clip.videoUrl;
+  let ownedTaskId: string | null = null;
   useStore.getState().updateClip(clipId, {
     lipSyncStatus: "queued",
     lipSyncSourceVideoUrl: sourceVideoUrl,
@@ -96,6 +97,7 @@ export async function applyLipSyncToClip(clipId: string): Promise<void> {
       start: clip.start,
       end: clip.end,
     });
+    ownedTaskId = started.id;
     useStore.getState().updateClip(clipId, {
       lipSyncTaskId: started.id,
       lipSyncStatus: "generating",
@@ -103,7 +105,12 @@ export async function applyLipSyncToClip(clipId: string): Promise<void> {
     await finishLipSyncPoll(clipId, started.id, sourceVideoUrl);
   } catch (error) {
     const current = useStore.getState().clips.find((item) => item.id === clipId);
-    if (!current?.lipSyncTaskId || current.lipSyncSourceVideoUrl === sourceVideoUrl) {
+    const ownsQueuedStart = ownedTaskId === null
+      && current?.lipSyncStatus === "queued"
+      && current.lipSyncSourceVideoUrl === sourceVideoUrl
+      && !current.lipSyncTaskId;
+    const ownsProviderTask = ownedTaskId !== null && current?.lipSyncTaskId === ownedTaskId;
+    if (ownsQueuedStart || ownsProviderTask) {
       useStore.getState().updateClip(clipId, {
         lipSyncStatus: "failed",
         lastError: getErrorMessage(error),
@@ -115,6 +122,20 @@ export async function applyLipSyncToClip(clipId: string): Promise<void> {
 
 export function resumeInflightLipSyncJobs(): void {
   for (const clip of useStore.getState().clips) {
+    if (clip.lipSyncStatus === "queued" && !clip.lipSyncTaskId) {
+      useStore.getState().updateClip(clip.id, {
+        lipSyncStatus: "failed",
+        lastError: "Lip-sync start was interrupted before a provider task was created. Try again.",
+      });
+      continue;
+    }
+    if (clip.lipSyncStatus === "generating" && (!clip.lipSyncTaskId || !clip.lipSyncSourceVideoUrl)) {
+      useStore.getState().updateClip(clip.id, {
+        lipSyncStatus: "failed",
+        lastError: "Lip-sync task metadata was incomplete after reload. Try again.",
+      });
+      continue;
+    }
     if (
       clip.lipSyncStatus !== "generating" ||
       !clip.lipSyncTaskId ||
