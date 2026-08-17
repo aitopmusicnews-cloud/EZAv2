@@ -17,6 +17,16 @@ services:
       - key: WEB_DIST_DIR
         value: apps/web/dist
       - key: STORAGE_BACKEND
-        value: local
+        value: s3
       - key: STORAGE_DIR
         value: ./storage
+      - key: S3_BUCKET
+        value: rendernodock-storage-052080186671-us-east-1-an
+      - key: S3_REGION
+        value: us-east-1
+      - key: S3_PUBLIC_URL_BASE
+        value: https://rendernodock-storage-052080186671-us-east-1-an.s3.us-east-1.amazonaws.com
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
