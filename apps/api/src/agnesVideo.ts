@@ -80,14 +80,14 @@ function requestedAspectRatio(req: AgnesGenerationRequest): string {
 }
 
 function sourceImage(req: AgnesGenerationRequest): string | undefined {
-  if (!("imageUrl" in req) && !("promptImage" in req)) return undefined;
-  const image = req.promptImage ?? req.imageUrl;
+  if (!("promptImage" in req)) return undefined;
+  const image = req.promptImage;
   return typeof image === "string" && image.trim() ? image.trim() : undefined;
 }
 
 function sourceEndImage(req: AgnesGenerationRequest): string | undefined {
-  if (!("endImageUrl" in req) && !("promptImageEnd" in req)) return undefined;
-  const image = req.promptImageEnd ?? req.endImageUrl;
+  if (!("promptImageEnd" in req)) return undefined;
+  const image = req.promptImageEnd;
   return typeof image === "string" && image.trim() ? image.trim() : undefined;
 }
 
@@ -186,7 +186,7 @@ export async function startAgnesVideo(
   req: AgnesGenerationRequest,
   sourceMode: "textToVideo" | "imageToVideo" | "keyframeToVideo",
 ): Promise<GenerationTask> {
-  const prompt = (req.promptText ?? req.prompt ?? "").trim();
+  const prompt = req.promptText.trim();
   if (!prompt) throw new Error("A video prompt is required.");
   const duration = requireTimelineDuration(req.duration);
   const initialImage = sourceImage(req);

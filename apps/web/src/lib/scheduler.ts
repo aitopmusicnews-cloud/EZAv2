@@ -57,8 +57,10 @@ function taskSucceeded(task: Task): boolean {
 
 function taskOutputUrl(task: Task): string | undefined {
   if (task.outputUrl) return task.outputUrl;
-  if (Array.isArray(task.output)) return task.output[0];
-  return task.output?.videoUrl ?? task.output?.imageUrl ?? task.output?.url;
+  const output = task.output;
+  if (typeof output === "string") return output;
+  if (Array.isArray(output)) return output[0];
+  return output?.videoUrl ?? output?.imageUrl ?? output?.url;
 }
 
 const newJobId = () => `job-${crypto.randomUUID().slice(0, 8)}`;
