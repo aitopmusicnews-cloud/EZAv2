@@ -28,6 +28,21 @@ describe("production control schemas", () => {
     });
   });
 
+  it("accepts app-local reference paths that the API can convert to provider URLs", () => {
+    const parsed = TextToImageRequest.parse({
+      promptText: "same woman and car",
+      mode: "compose",
+      referenceImages: [
+        { id: "char-local", url: "/storage/character.png", role: "character", locked: true },
+        { id: "car-local", url: "/storage/car.png", role: "vehicle", locked: true },
+      ],
+    });
+    expect(parsed.referenceImages?.map((asset) => asset.url)).toEqual([
+      "/storage/character.png",
+      "/storage/car.png",
+    ]);
+  });
+
   it("preserves video negative prompts across all Agnes video request modes", () => {
     const negativePrompt = "right-hand-drive car, duplicate protagonist, oncoming rivals";
 
