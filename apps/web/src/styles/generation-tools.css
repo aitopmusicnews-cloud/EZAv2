@@ -36,3 +36,64 @@
 .lipsync-btn {
   margin-top: 8px;
 }
+
+.production-bible {
+  border: 1px solid rgba(249, 115, 22, 0.24);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(249, 115, 22, 0.045);
+}
+
+.production-bible > summary,
+.request-inspector > summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.field-stack {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.prompt.compact {
+  min-height: 72px;
+}
+
+.production-label-gap {
+  margin-top: 12px;
+}
+
+.production-controls {
+  border-left: 2px solid rgba(249, 115, 22, 0.45);
+  padding-left: 10px;
+}
+
+.spatial-warning {
+  margin-top: 10px;
+}
+
+.request-inspector {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.request-card {
+  margin-top: 10px;
+}
+
+.request-code {
+  margin: 8px 0 0;
+  max-height: 210px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 9px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  line-height: 1.45;
+}

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { AudioAnalysis, AudioSection, Clip } from "@mvs/shared";
+import type { AudioAnalysis, AudioSection, Clip, ProductionBible, ReferenceAsset } from "@mvs/shared";
 import { AGNES_VIDEO_MODEL, ProjectSnapshot } from "@mvs/shared";
 import type { Job } from "./scheduler.js";
 import { getWs } from "./wavesurfer-ref.js";
@@ -103,12 +103,14 @@ type State = {
   isPlaying: boolean;
   characterImageUrl: string | null;
   lookbook: string[];
+  productionBible: ProductionBible | null;
+  referenceAssets: ReferenceAsset[];
   zoom: number;
   jobs: Job[];
 
   setProjectName: (name: string) => void;
   loadSong: (songId: string, audioUrl: string, analysis: AudioAnalysis, filename: string | null) => void;
-  /** Clear the loaded song + clips/playhead/jobs but keep reference images and lookbook. */
+  /** Clear the loaded song + clips/playhead/jobs but keep references and production controls. */
   unloadSong: () => void;
   resetProject: () => void;
   /** Returns a plain object snapshot of the persistable state for saving. */
@@ -125,6 +127,9 @@ type State = {
   removeLookbook: (url: string) => void;
   /** Swap a lookbook entry in place after the image library rehosts an upload. */
   replaceLookbookUrl: (oldUrl: string, newUrl: string) => void;
+  setProductionBible: (bible: ProductionBible | null) => void;
+  upsertReferenceAsset: (asset: ReferenceAsset) => void;
+  removeReferenceAsset: (id: string) => void;
 
   setZoom: (z: number) => void;
   zoomIn: () => void;
@@ -154,6 +159,8 @@ const emptyState = {
   isPlaying: false,
   characterImageUrl: null,
   lookbook: [],
+  productionBible: null,
+  referenceAssets: [],
   zoom: 1,
   jobs: [],
 };
@@ -177,6 +184,8 @@ export const useStore = create<State>()(
           clips: s.clips,
           characterImageUrl: s.characterImageUrl,
           lookbook: s.lookbook,
+          productionBible: s.productionBible,
+          referenceAssets: s.referenceAssets,
           zoom: s.zoom,
           playhead: s.playhead,
         };
@@ -218,6 +227,8 @@ export const useStore = create<State>()(
           clips,
           characterImageUrl: s.characterImageUrl ?? null,
           lookbook: s.lookbook ?? [],
+          productionBible: s.productionBible ?? null,
+          referenceAssets: s.referenceAssets ?? [],
           zoom: s.zoom ?? 1,
           playhead: s.playhead ?? 0,
           selectedClipId: null,
@@ -274,8 +285,6 @@ export const useStore = create<State>()(
         set((s) => {
           const idx = s.lookbook.indexOf(oldUrl);
           if (idx < 0 || oldUrl === newUrl) return s;
-          // If the new URL is already in the lookbook (race), just remove the
-          // old one rather than create a duplicate.
           if (s.lookbook.includes(newUrl)) {
             return { lookbook: s.lookbook.filter((u) => u !== oldUrl) };
           }
@@ -283,6 +292,31 @@ export const useStore = create<State>()(
           next[idx] = newUrl;
           return { lookbook: next };
         }),
+      setProductionBible: (productionBible) => set({ productionBible }),
+      upsertReferenceAsset: (asset) =>
+        set((s) => {
+          const exists = s.referenceAssets.some((item) => item.id === asset.id);
+          return {
+            referenceAssets: exists
+              ? s.referenceAssets.map((item) => item.id === asset.id ? asset : item)
+              : [...s.referenceAssets, asset],
+          };
+        }),
+      removeReferenceAsset: (id) =>
+        set((s) => ({
+          referenceAssets: s.referenceAssets.filter((asset) => asset.id !== id),
+          productionBible: s.productionBible
+            ? {
+                ...s.productionBible,
+                characterReferenceAssetIds: s.productionBible.characterReferenceAssetIds?.filter((assetId) => assetId !== id),
+                vehicleReferenceAssetIds: s.productionBible.vehicleReferenceAssetIds?.filter((assetId) => assetId !== id),
+              }
+            : null,
+          clips: s.clips.map((clip) => ({
+            ...clip,
+            referenceAssetIds: clip.referenceAssetIds?.filter((assetId) => assetId !== id),
+          })),
+        })),
 
       setZoom: (z) => set({ zoom: clamp(z, ZOOM_MIN, ZOOM_MAX) }),
       zoomIn: () => set((s) => ({ zoom: clamp(s.zoom * ZOOM_STEP, ZOOM_MIN, ZOOM_MAX) })),
@@ -354,16 +388,11 @@ export const useStore = create<State>()(
 
           const minTime = left.start + MIN_CLIP_LEN;
           const maxTime = right.end - MIN_CLIP_LEN;
-          // Cap-aware bounds: neither side can grow past MAX_CLIP_LEN.
           const lo = Math.max(minTime, right.end - MAX_CLIP_LEN);
           const hi = Math.min(maxTime, left.start + MAX_CLIP_LEN);
           if (lo >= hi) return s;
           const t = clamp(newTime, lo, hi);
 
-          // Agnes outputs are normalized and hard-trimmed to the exact logical
-          // timeline slot. If a generated slot duration changes, regenerate it
-          // rather than time-stretching the visual. Library/uploaded clips keep
-          // their media and may be adapted by the final renderer.
           const resize = (c: Clip, patch: Pick<Clip, "start"> | Pick<Clip, "end">): Clip => {
             const updated = { ...c, ...patch };
             if (c.status !== "ready" || c.source === "library" || c.source === "upload") return updated;
@@ -413,9 +442,6 @@ export const useStore = create<State>()(
       name: PERSIST_KEY,
       version: 1,
       storage: createJSONStorage(() => localStorage),
-      // Only persist the project data — runtime objects (ws, jobs, isPlaying)
-      // are deliberately left out. Jobs are runtime-only: a tab close cancels
-      // them by definition.
       partialize: (s) =>
         ({
           projectId: s.projectId,
@@ -427,14 +453,11 @@ export const useStore = create<State>()(
           clips: s.clips,
           characterImageUrl: s.characterImageUrl,
           lookbook: s.lookbook,
+          productionBible: s.productionBible,
+          referenceAssets: s.referenceAssets,
           zoom: s.zoom,
           playhead: s.playhead,
         }) as Partial<State>,
-      // On rehydrate, any clip that was in the local queue is now stale (the
-      // queue is process-memory, gone after reload). Reset those to empty so
-      // the user can re-enqueue. Clips already "generating" keep their state
-      // and generationTaskId so Editor.resumeInflightJobs can reattach to the
-      // server-side task. Prompt and source choice are preserved either way.
       merge: (persisted, current) => {
         const result = ProjectSnapshot.safeParse(persisted);
         if (!result.success) {

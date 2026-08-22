@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../lib/store.js";
-import type { Clip } from "@mvs/shared";
+import type { Clip, ProductionBible, ReferenceAsset, SpatialLock } from "@mvs/shared";
 import { AGNES_VIDEO_MODEL, getErrorMessage } from "@mvs/shared";
 import { enqueueGeneration, type GenerationSource } from "../lib/scheduler.js";
 import {
@@ -10,12 +10,20 @@ import {
   type SavedClip,
   type SavedImage,
 } from "../lib/api.js";
+import {
+  compileImagePrompt,
+  compileNegativePrompt,
+  compileVideoPrompt,
+  validateSpatialLock,
+} from "../lib/promptCompiler.js";
 import { applyLipSyncToClip } from "../lib/lipsync.js";
 import { AssetUploader } from "./AssetUploader.js";
 import { toast } from "../lib/toast.js";
 import "../styles/generation-tools.css";
 
 type SidebarMode = GenerationSource | "textToImage" | "library";
+type SpatialPresetKey = "none" | "usMirror" | "usExterior" | "stationary";
+type SceneSpatialPresetKey = "project" | SpatialPresetKey;
 
 const SOURCES: Array<{ value: SidebarMode; label: string; desc: string }> = [
   { value: "textToVideo", label: "Text → Video", desc: "Describe the scene and let Agnes create the visual." },
@@ -25,6 +33,46 @@ const SOURCES: Array<{ value: SidebarMode; label: string; desc: string }> = [
   { value: "library", label: "Clip library", desc: "Reuse a saved clip without launching generation." },
 ];
 
+const US_MIRROR_LOCK: SpatialLock = {
+  trafficSystem: "US_RIGHT_HAND",
+  driveSide: "LEFT_HAND_DRIVE",
+  driverSeat: "FRONT_LEFT",
+  passengerSeat: "FRONT_RIGHT",
+  cameraPosition: "FRONT_PASSENGER_INTERIOR",
+  cameraDirection: "TOWARD_DRIVER_AND_CENTER_MIRROR",
+  vehicleDirection: "FORWARD",
+  competitorPosition: "BEHIND",
+  competitorDirection: "SAME_DIRECTION",
+  rearviewMirrorShows: "ROAD_BEHIND_AND_COMPETITORS",
+  windshieldShows: "OPEN_ROAD_AHEAD",
+  allowOncomingTraffic: false,
+};
+
+const US_EXTERIOR_LOCK: SpatialLock = {
+  trafficSystem: "US_RIGHT_HAND",
+  driveSide: "LEFT_HAND_DRIVE",
+  driverSeat: "FRONT_LEFT",
+  passengerSeat: "FRONT_RIGHT",
+  cameraPosition: "DRIVER_SIDE_EXTERIOR",
+  cameraDirection: "TOWARD_VEHICLE",
+  vehicleDirection: "FORWARD",
+  competitorPosition: "BEHIND",
+  competitorDirection: "SAME_DIRECTION",
+  windshieldShows: "OPEN_ROAD_AHEAD",
+  allowOncomingTraffic: false,
+};
+
+const STATIONARY_LOCK: SpatialLock = {
+  trafficSystem: "US_RIGHT_HAND",
+  driveSide: "LEFT_HAND_DRIVE",
+  driverSeat: "FRONT_LEFT",
+  passengerSeat: "FRONT_RIGHT",
+  vehicleDirection: "STATIONARY",
+  competitorPosition: "NONE",
+  competitorDirection: "NONE",
+  allowOncomingTraffic: false,
+};
+
 export function Sidebar() {
   const selectedId = useStore((s) => s.selectedClipId);
   const clips = useStore((s) => s.clips);
@@ -32,8 +80,12 @@ export function Sidebar() {
   const audioUrl = useStore((s) => s.audioUrl);
   const lookbook = useStore((s) => s.lookbook);
   const characterImage = useStore((s) => s.characterImageUrl);
+  const productionBible = useStore((s) => s.productionBible);
+  const referenceAssets = useStore((s) => s.referenceAssets);
   const addLookbook = useStore((s) => s.addLookbook);
   const updateClip = useStore((s) => s.updateClip);
+  const setProductionBible = useStore((s) => s.setProductionBible);
+  const upsertReferenceAsset = useStore((s) => s.upsertReferenceAsset);
   const clip = useMemo(() => clips.find((c) => c.id === selectedId) ?? null, [clips, selectedId]);
   const [extracting, setExtracting] = useState(false);
   const [mode, setMode] = useState<SidebarMode>("textToVideo");
@@ -53,6 +105,7 @@ export function Sidebar() {
 
   if (!clip || !analysis) return null;
 
+  const bible: ProductionBible = productionBible ?? {};
   const source: GenerationSource | "library" =
     clip.source === "imageToVideo" || clip.source === "keyframeToVideo" || clip.source === "library"
       ? clip.source
@@ -62,7 +115,47 @@ export function Sidebar() {
   const durationSec = clip.end - clip.start;
   const energy = avgRms(analysis.rmsCurve, clip.start, clip.end, analysis.duration);
   const prompt = clip.prompt ?? "";
-  const availableImages = Array.from(new Set([characterImage, ...lookbook].filter((v): v is string => Boolean(v))));
+  const imagePrompt = clip.imagePrompt ?? "";
+  const availableImages = Array.from(new Set([
+    characterImage,
+    ...lookbook,
+    ...referenceAssets.map((asset) => asset.url),
+  ].filter((v): v is string => Boolean(v))));
+
+  const characterReference = findBibleReference(referenceAssets, bible.characterReferenceAssetIds);
+  const vehicleReference = findBibleReference(referenceAssets, bible.vehicleReferenceAssetIds);
+  const globalReferenceIds = [
+    ...(bible.characterReferenceAssetIds ?? []),
+    ...(bible.vehicleReferenceAssetIds ?? []),
+  ];
+  const activeReferenceIds = Array.from(new Set([...globalReferenceIds, ...(clip.referenceAssetIds ?? [])]));
+  const selectedReferenceAssets = activeReferenceIds
+    .map((id) => referenceAssets.find((asset) => asset.id === id))
+    .filter((asset): asset is ReferenceAsset => Boolean(asset));
+
+  const effectiveSpatialLock = clip.spatialLock ?? bible.defaultSpatialLock;
+  const spatialIssues = validateSpatialLock(effectiveSpatialLock);
+  const compiledVideoPrompt = compileVideoPrompt({
+    scenePrompt: prompt,
+    productionBible: bible,
+    spatialLock: effectiveSpatialLock,
+    referenceAssets: selectedReferenceAssets,
+  });
+  const compiledImagePrompt = compileImagePrompt({
+    scenePrompt: imagePrompt,
+    productionBible: bible,
+    spatialLock: effectiveSpatialLock,
+    referenceAssets: selectedReferenceAssets,
+    negativePrompt: clip.negativePrompt,
+  });
+  const compiledNegativePrompt = compileNegativePrompt({
+    productionBible: bible,
+    spatialLock: effectiveSpatialLock,
+    negativePrompt: clip.negativePrompt,
+  });
+  const imageGenerationMode: "text2img" | "img2img" | "compose" =
+    selectedReferenceAssets.length >= 2 ? "compose" : selectedReferenceAssets.length === 1 ? "img2img" : "text2img";
+
   const selectedImage = clip.archetypeUrl ?? availableImages[0];
   const endImage = clip.keyframeEndUrl;
   const canGenerate = checkCanGenerate(source, { prompt, selectedImage, endImage });
@@ -78,10 +171,52 @@ export function Sidebar() {
     });
   };
 
+  const updateBible = (patch: Partial<ProductionBible>) => {
+    setProductionBible({ ...bible, ...patch });
+  };
+
+  const setLockedReference = (role: "character" | "vehicle", url: string) => {
+    if (!url) {
+      if (role === "character") updateBible({ characterReferenceAssetIds: [] });
+      else updateBible({ vehicleReferenceAssetIds: [] });
+      return;
+    }
+    let asset = referenceAssets.find((item) => item.role === role && item.url === url);
+    if (!asset) {
+      asset = {
+        id: `ref-${role}-${crypto.randomUUID().slice(0, 8)}`,
+        url,
+        role,
+        locked: true,
+        name: role === "character" ? "Locked character" : "Locked vehicle",
+      };
+      upsertReferenceAsset(asset);
+    } else if (asset.locked !== true) {
+      asset = { ...asset, locked: true };
+      upsertReferenceAsset(asset);
+    }
+    if (role === "character") updateBible({ characterReferenceAssetIds: [asset.id] });
+    else updateBible({ vehicleReferenceAssetIds: [asset.id] });
+  };
+
+  const setProjectSpatialPreset = (key: SpatialPresetKey) => {
+    updateBible({ defaultSpatialLock: spatialPreset(key) });
+  };
+
+  const setSceneSpatialPreset = (key: SceneSpatialPresetKey) => {
+    updateClip(clip.id, {
+      spatialLock: key === "project" ? undefined : key === "none" ? {} : spatialPreset(key),
+    });
+  };
+
   const onGenerate = () => {
     if (source === "library") return;
     if (!canGenerate.ok) {
       toast.warning(canGenerate.reason);
+      return;
+    }
+    if (spatialIssues.length) {
+      toast.warning(`Fix spatial lock: ${spatialIssues[0]}`);
       return;
     }
     enqueueGeneration({
@@ -89,7 +224,8 @@ export function Sidebar() {
       source,
       seedImageUrl: source === "textToVideo" ? "" : selectedImage ?? "",
       endImageUrl: source === "keyframeToVideo" ? endImage ?? "" : "",
-      prompt,
+      prompt: compiledVideoPrompt,
+      negativePrompt: compiledNegativePrompt,
       duration: durationSec,
       sectionLabel,
       energy,
@@ -98,15 +234,28 @@ export function Sidebar() {
   };
 
   const onGenerateImage = async () => {
-    const promptText = (clip.imagePrompt ?? "").trim();
-    if (!promptText) {
+    if (!imagePrompt.trim()) {
       toast.warning("Describe the image before generating");
+      return;
+    }
+    if (spatialIssues.length) {
+      toast.warning(`Fix spatial lock: ${spatialIssues[0]}`);
       return;
     }
     setImageGenerating(true);
     try {
-      const saved = await generateTextToImage({ promptText, size: imageSize });
+      const referenceImages = selectedReferenceAssets;
+      const saved = await generateTextToImage({
+        promptText: compiledImagePrompt,
+        size: imageSize,
+        mode: imageGenerationMode,
+        referenceImages,
+      });
       setGeneratedImage(saved);
+      updateClip(clip.id, {
+        compiledPrompt: compiledImagePrompt,
+        compiledNegativePrompt: compiledNegativePrompt || undefined,
+      });
       toast.success("Image generated and saved to Library → Images");
     } catch (error) {
       toast.error(`Image generation failed: ${getErrorMessage(error)}`);
@@ -167,12 +316,36 @@ export function Sidebar() {
         <div className="select-desc">{SOURCES.find((item) => item.value === mode)?.desc}</div>
       </div>
 
+      <ProductionBiblePanel
+        bible={bible}
+        availableImages={availableImages}
+        characterReferenceUrl={characterReference?.url}
+        vehicleReferenceUrl={vehicleReference?.url}
+        defaultSpatialPreset={spatialPresetKey(bible.defaultSpatialLock)}
+        onCharacterReference={(url) => setLockedReference("character", url)}
+        onVehicleReference={(url) => setLockedReference("vehicle", url)}
+        onCharacterProfile={(value) => updateBible({ characterProfile: value })}
+        onVehicleProfile={(value) => updateBible({ vehicleProfile: value })}
+        onStylePrompt={(value) => updateBible({ stylePrompt: value })}
+        onGlobalNegativePrompt={(value) => updateBible({ negativePrompt: value })}
+        onDefaultSpatialPreset={setProjectSpatialPreset}
+      />
+
       {mode === "textToImage" ? (
         <TextToImagePanel
-          prompt={clip.imagePrompt ?? ""}
+          prompt={imagePrompt}
           size={imageSize}
           generating={imageGenerating}
           generatedImage={generatedImage}
+          imageGenerationMode={imageGenerationMode}
+          selectedReferenceAssets={selectedReferenceAssets}
+          compiledPrompt={compiledImagePrompt}
+          negativePrompt={compiledNegativePrompt}
+          spatialIssues={spatialIssues}
+          sceneSpatialPreset={clip.spatialLock === undefined ? "project" : spatialPresetKey(clip.spatialLock)}
+          onSceneSpatialPreset={setSceneSpatialPreset}
+          sceneNegativePrompt={clip.negativePrompt ?? ""}
+          onSceneNegativePrompt={(value) => updateClip(clip.id, { negativePrompt: value })}
           onPromptChange={(value) => updateClip(clip.id, { imagePrompt: value })}
           onSizeChange={setImageSize}
           onGenerate={onGenerateImage}
@@ -238,6 +411,22 @@ export function Sidebar() {
             <div className="select-desc">Generated clip audio is discarded; the original uploaded song remains the final soundtrack.</div>
           </div>
 
+          <SceneProductionControls
+            spatialPreset={clip.spatialLock === undefined ? "project" : spatialPresetKey(clip.spatialLock)}
+            onSpatialPreset={setSceneSpatialPreset}
+            negativePrompt={clip.negativePrompt ?? ""}
+            onNegativePrompt={(value) => updateClip(clip.id, { negativePrompt: value })}
+            spatialIssues={spatialIssues}
+          />
+
+          <RequestInspector
+            mode={source}
+            references={source === "textToVideo" ? [] : [selectedImage, source === "keyframeToVideo" ? endImage : undefined].filter((value): value is string => Boolean(value))}
+            compiledPrompt={compiledVideoPrompt}
+            negativePrompt={compiledNegativePrompt}
+            detail={`${durationSec.toFixed(2)}s · 16:9 · Agnes Video V2.0`}
+          />
+
           <div className="option-group">
             <div className="label">Audio context</div>
             <div className="context-card">
@@ -260,8 +449,8 @@ export function Sidebar() {
             <button
               className="generate-btn"
               onClick={onGenerate}
-              disabled={clip.status === "queued" || clip.status === "generating" || !canGenerate.ok}
-              title={canGenerate.ok ? undefined : canGenerate.reason}
+              disabled={clip.status === "queued" || clip.status === "generating" || !canGenerate.ok || spatialIssues.length > 0}
+              title={spatialIssues.length ? spatialIssues[0] : canGenerate.ok ? undefined : canGenerate.reason}
             >
               {clip.status === "queued" ? "Queued…" : clip.status === "generating" ? "Generating with Agnes…" : clip.status === "failed" ? "Retry Agnes" : clip.status === "ready" ? "Regenerate with Agnes" : "Generate with Agnes"}
             </button>
@@ -308,11 +497,90 @@ export function Sidebar() {
   );
 }
 
+function ProductionBiblePanel({
+  bible,
+  availableImages,
+  characterReferenceUrl,
+  vehicleReferenceUrl,
+  defaultSpatialPreset,
+  onCharacterReference,
+  onVehicleReference,
+  onCharacterProfile,
+  onVehicleProfile,
+  onStylePrompt,
+  onGlobalNegativePrompt,
+  onDefaultSpatialPreset,
+}: {
+  bible: ProductionBible;
+  availableImages: string[];
+  characterReferenceUrl?: string;
+  vehicleReferenceUrl?: string;
+  defaultSpatialPreset: SpatialPresetKey;
+  onCharacterReference: (url: string) => void;
+  onVehicleReference: (url: string) => void;
+  onCharacterProfile: (value: string) => void;
+  onVehicleProfile: (value: string) => void;
+  onStylePrompt: (value: string) => void;
+  onGlobalNegativePrompt: (value: string) => void;
+  onDefaultSpatialPreset: (value: SpatialPresetKey) => void;
+}) {
+  return (
+    <details className="option-group production-bible" open>
+      <summary className="label">Production Bible</summary>
+      <div className="select-desc">Project-wide identity, vehicle, geometry, style, and negative rules automatically compile into every Agnes request.</div>
+
+      <div className="field-stack">
+        <label className="label" htmlFor="locked-character-reference">Locked character reference</label>
+        <ReferenceSelect id="locked-character-reference" value={characterReferenceUrl ?? ""} images={availableImages} onChange={onCharacterReference} emptyLabel="No locked character" />
+      </div>
+
+      <div className="field-stack">
+        <label className="label" htmlFor="locked-vehicle-reference">Locked vehicle reference</label>
+        <ReferenceSelect id="locked-vehicle-reference" value={vehicleReferenceUrl ?? ""} images={availableImages} onChange={onVehicleReference} emptyLabel="No locked vehicle" />
+      </div>
+
+      <div className="field-stack">
+        <div className="label">Character lock description</div>
+        <textarea className="prompt compact" value={bible.characterProfile ?? ""} onChange={(e) => onCharacterProfile(e.target.value)} placeholder="Exact recurring identity, age, hair, skin tone, wardrobe…" />
+      </div>
+
+      <div className="field-stack">
+        <div className="label">Vehicle lock description</div>
+        <textarea className="prompt compact" value={bible.vehicleProfile ?? ""} onChange={(e) => onVehicleProfile(e.target.value)} placeholder="Exact recurring vehicle, paint, wheels, interior orientation…" />
+      </div>
+
+      <div className="field-stack">
+        <div className="label">Project style</div>
+        <textarea className="prompt compact" value={bible.stylePrompt ?? ""} onChange={(e) => onStylePrompt(e.target.value)} placeholder="Cinematic realism, lighting palette, aspect treatment…" />
+      </div>
+
+      <div className="field-stack">
+        <div className="label">Global negative prompt</div>
+        <textarea className="prompt compact" value={bible.negativePrompt ?? ""} onChange={(e) => onGlobalNegativePrompt(e.target.value)} placeholder="Duplicate protagonist, inconsistent face, wrong car…" />
+      </div>
+
+      <div className="field-stack">
+        <div className="label">Default spatial lock</div>
+        <SpatialPresetSelect value={defaultSpatialPreset} includeProject={false} onChange={(value) => onDefaultSpatialPreset(value as SpatialPresetKey)} />
+      </div>
+    </details>
+  );
+}
+
 function TextToImagePanel({
   prompt,
   size,
   generating,
   generatedImage,
+  imageGenerationMode,
+  selectedReferenceAssets,
+  compiledPrompt,
+  negativePrompt,
+  spatialIssues,
+  sceneSpatialPreset,
+  onSceneSpatialPreset,
+  sceneNegativePrompt,
+  onSceneNegativePrompt,
   onPromptChange,
   onSizeChange,
   onGenerate,
@@ -323,6 +591,15 @@ function TextToImagePanel({
   size: string;
   generating: boolean;
   generatedImage: SavedImage | null;
+  imageGenerationMode: "text2img" | "img2img" | "compose";
+  selectedReferenceAssets: ReferenceAsset[];
+  compiledPrompt: string;
+  negativePrompt: string;
+  spatialIssues: string[];
+  sceneSpatialPreset: SceneSpatialPresetKey;
+  onSceneSpatialPreset: (value: SceneSpatialPresetKey) => void;
+  sceneNegativePrompt: string;
+  onSceneNegativePrompt: (value: string) => void;
   onPromptChange: (value: string) => void;
   onSizeChange: (value: string) => void;
   onGenerate: () => void;
@@ -340,6 +617,15 @@ function TextToImagePanel({
           onChange={(e) => onPromptChange(e.target.value)}
         />
       </div>
+
+      <SceneProductionControls
+        spatialPreset={sceneSpatialPreset}
+        onSpatialPreset={onSceneSpatialPreset}
+        negativePrompt={sceneNegativePrompt}
+        onNegativePrompt={onSceneNegativePrompt}
+        spatialIssues={spatialIssues}
+      />
+
       <div className="option-group">
         <div className="label">Image size</div>
         <div className="select-wrap">
@@ -353,8 +639,17 @@ function TextToImagePanel({
           <span className="select-chevron">▾</span>
         </div>
       </div>
+
+      <RequestInspector
+        mode={imageGenerationMode}
+        references={selectedReferenceAssets.map((asset) => `${asset.role}: ${asset.url}`)}
+        compiledPrompt={compiledPrompt}
+        negativePrompt={negativePrompt}
+        detail={size}
+      />
+
       <div className="sidebar-footer">
-        <button className="generate-btn" onClick={onGenerate} disabled={generating || !prompt.trim()}>
+        <button className="generate-btn" onClick={onGenerate} disabled={generating || !prompt.trim() || spatialIssues.length > 0}>
           {generating ? "Generating image with Agnes…" : "Generate Image with Agnes"}
         </button>
       </div>
@@ -370,6 +665,140 @@ function TextToImagePanel({
       )}
     </>
   );
+}
+
+function SceneProductionControls({
+  spatialPreset,
+  onSpatialPreset,
+  negativePrompt,
+  onNegativePrompt,
+  spatialIssues,
+}: {
+  spatialPreset: SceneSpatialPresetKey;
+  onSpatialPreset: (value: SceneSpatialPresetKey) => void;
+  negativePrompt: string;
+  onNegativePrompt: (value: string) => void;
+  spatialIssues: string[];
+}) {
+  return (
+    <div className="option-group production-controls">
+      <div className="label">Spatial lock</div>
+      <SpatialPresetSelect value={spatialPreset} includeProject onChange={(value) => onSpatialPreset(value as SceneSpatialPresetKey)} />
+      <div className="select-desc">Use the U.S. mirror preset for left-hand-drive interior shots with competitors behind you.</div>
+
+      <div className="label production-label-gap">Scene negative prompt</div>
+      <textarea
+        className="prompt compact"
+        value={negativePrompt}
+        onChange={(e) => onNegativePrompt(e.target.value)}
+        placeholder="Scene-specific things Agnes must avoid…"
+      />
+
+      {spatialIssues.length > 0 && (
+        <div className="error-card spatial-warning">
+          <div className="error-title">Spatial conflict</div>
+          {spatialIssues.map((issue) => <div className="error-message" key={issue}>{issue}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RequestInspector({
+  mode,
+  references,
+  compiledPrompt,
+  negativePrompt,
+  detail,
+}: {
+  mode: string;
+  references: string[];
+  compiledPrompt: string;
+  negativePrompt: string;
+  detail: string;
+}) {
+  return (
+    <details className="option-group request-inspector">
+      <summary className="label">What Agnes will receive</summary>
+      <div className="context-card request-card">
+        <div className="row"><span>Mode</span><span>{mode}</span></div>
+        <div className="row"><span>References</span><span>{references.length}</span></div>
+        <div className="row"><span>Output</span><span>{detail}</span></div>
+      </div>
+      {references.length > 0 && <pre className="request-code">{references.join("\n")}</pre>}
+      <div className="label production-label-gap">Compiled prompt</div>
+      <pre className="request-code">{compiledPrompt || "No scene prompt yet."}</pre>
+      <div className="label production-label-gap">Compiled negative prompt</div>
+      <pre className="request-code">{negativePrompt || "None"}</pre>
+    </details>
+  );
+}
+
+function ReferenceSelect({
+  id,
+  value,
+  images,
+  onChange,
+  emptyLabel,
+}: {
+  id: string;
+  value: string;
+  images: string[];
+  onChange: (value: string) => void;
+  emptyLabel: string;
+}) {
+  return (
+    <div className="select-wrap">
+      <select id={id} className="select" value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">{emptyLabel}</option>
+        {images.map((url, index) => <option key={url} value={url}>Reference {index + 1}</option>)}
+      </select>
+      <span className="select-chevron">▾</span>
+    </div>
+  );
+}
+
+function SpatialPresetSelect({
+  value,
+  includeProject,
+  onChange,
+}: {
+  value: SceneSpatialPresetKey | SpatialPresetKey;
+  includeProject: boolean;
+  onChange: (value: SceneSpatialPresetKey) => void;
+}) {
+  return (
+    <div className="select-wrap">
+      <select className="select" value={value} onChange={(e) => onChange(e.target.value as SceneSpatialPresetKey)}>
+        {includeProject && <option value="project">Use project default</option>}
+        <option value="none">No spatial lock</option>
+        <option value="usMirror">U.S. left-hand drive · passenger camera · rivals behind in mirror</option>
+        <option value="usExterior">U.S. left-hand drive · exterior tracking · rivals behind</option>
+        <option value="stationary">U.S. left-hand drive · stationary vehicle</option>
+      </select>
+      <span className="select-chevron">▾</span>
+    </div>
+  );
+}
+
+function spatialPreset(key: SpatialPresetKey): SpatialLock | undefined {
+  if (key === "usMirror") return { ...US_MIRROR_LOCK };
+  if (key === "usExterior") return { ...US_EXTERIOR_LOCK };
+  if (key === "stationary") return { ...STATIONARY_LOCK };
+  return undefined;
+}
+
+function spatialPresetKey(lock?: SpatialLock | null): SpatialPresetKey {
+  if (!lock || Object.keys(lock).length === 0) return "none";
+  if (lock.vehicleDirection === "STATIONARY") return "stationary";
+  if (lock.cameraPosition === "FRONT_PASSENGER_INTERIOR" && lock.rearviewMirrorShows === "ROAD_BEHIND_AND_COMPETITORS") return "usMirror";
+  if (lock.cameraPosition === "DRIVER_SIDE_EXTERIOR") return "usExterior";
+  return "none";
+}
+
+function findBibleReference(referenceAssets: ReferenceAsset[], ids?: string[]): ReferenceAsset | undefined {
+  const first = ids?.[0];
+  return first ? referenceAssets.find((asset) => asset.id === first) : undefined;
 }
 
 type CanGenerate = { ok: true; reason?: string } | { ok: false; reason: string };

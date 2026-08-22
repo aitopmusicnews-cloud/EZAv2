@@ -1,0 +1,82 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  startImageToVideo: vi.fn(async () => ({ id: "task-1" })),
+  startKeyframeToVideo: vi.fn(async () => ({ id: "task-key" })),
+  startTextToVideo: vi.fn(async () => ({ id: "task-text" })),
+  pollTask: vi.fn(async () => ({ status: "SUCCEEDED", output: ["https://cdn.example.com/result.mp4"] })),
+  saveClipToServer: vi.fn(async (input: any) => ({ ...input, savedAt: new Date().toISOString() })),
+}));
+
+vi.mock("./api.js", () => ({
+  startImageToVideo: mocks.startImageToVideo,
+  startKeyframeToVideo: mocks.startKeyframeToVideo,
+  startTextToVideo: mocks.startTextToVideo,
+  pollTask: mocks.pollTask,
+  saveClipToServer: mocks.saveClipToServer,
+  ApiError: class ApiError extends Error {
+    rateLimited = false;
+  },
+}));
+
+vi.mock("./toast.js", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+  },
+}));
+
+import { useStore } from "./store.js";
+import { enqueueGeneration } from "./scheduler.js";
+
+describe("scheduler production controls", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useStore.setState({
+      clips: [{
+        id: "clip-1",
+        start: 0,
+        end: 8,
+        source: "imageToVideo",
+        status: "empty",
+        prompt: "mirror shot",
+      }],
+      jobs: [],
+      selectedClipId: "clip-1",
+    });
+  });
+
+  it("preserves the editable scene prompt while sending and storing the compiled Agnes request", async () => {
+    enqueueGeneration({
+      clipId: "clip-1",
+      source: "imageToVideo",
+      seedImageUrl: "https://cdn.example.com/start.png",
+      prompt: "[HARD SPATIAL CONSTRAINTS] left-hand-drive\n\n[SCENE] mirror shot",
+      negativePrompt: "right-hand-drive car, oncoming competitors",
+      duration: 8,
+      sectionLabel: "verse",
+      energy: 0.8,
+      model: "agnes-video-v2.0",
+    });
+
+    await vi.waitFor(() => expect(mocks.startImageToVideo).toHaveBeenCalledTimes(1));
+    expect(mocks.startImageToVideo.mock.calls[0]![0]).toMatchObject({
+      promptText: "[HARD SPATIAL CONSTRAINTS] left-hand-drive\n\n[SCENE] mirror shot",
+      negativePrompt: "right-hand-drive car, oncoming competitors",
+      promptImage: "https://cdn.example.com/start.png",
+      duration: 8,
+    });
+
+    await vi.waitFor(() => expect(useStore.getState().clips[0]?.status).toBe("ready"));
+    expect(useStore.getState().clips[0]).toMatchObject({
+      prompt: "mirror shot",
+      compiledPrompt: "[HARD SPATIAL CONSTRAINTS] left-hand-drive\n\n[SCENE] mirror shot",
+      compiledNegativePrompt: "right-hand-drive car, oncoming competitors",
+    });
+    expect(mocks.saveClipToServer).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: "[HARD SPATIAL CONSTRAINTS] left-hand-drive\n\n[SCENE] mirror shot",
+    }));
+  });
+});

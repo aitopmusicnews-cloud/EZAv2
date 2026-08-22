@@ -35,7 +35,6 @@ describe("moveBoundary", () => {
         makeClip({ id: "b", start: 5, end: 10 }),
       ],
     });
-    // newTime way past the right end — should clamp so right stays >= MIN_CLIP_LEN long
     useStore.getState().moveBoundary("b", 99);
     const [a, b] = useStore.getState().clips;
     expect(b!.end - b!.start).toBeGreaterThanOrEqual(MIN_CLIP_LEN);
@@ -49,8 +48,6 @@ describe("moveBoundary", () => {
         makeClip({ id: "b", start: 5, end: 30 }),
       ],
     });
-    // newTime would make right side 1s long (29s long left) — left can't
-    // exceed MAX_CLIP_LEN, so the move should be capped.
     useStore.getState().moveBoundary("b", 29);
     const [a] = useStore.getState().clips;
     expect(a!.end - a!.start).toBeLessThanOrEqual(MAX_CLIP_LEN);
@@ -101,7 +98,6 @@ describe("moveBoundary", () => {
   });
 
   it("no-ops when the boundary can't move (lo >= hi)", () => {
-    // Two clips already at MIN_CLIP_LEN-tight on both sides leave no room.
     useStore.setState({
       clips: [
         makeClip({ id: "a", start: 0, end: MIN_CLIP_LEN }),
@@ -112,5 +108,75 @@ describe("moveBoundary", () => {
     useStore.getState().moveBoundary("b", 0.3);
     const after = useStore.getState().clips;
     expect(after).toEqual(before);
+  });
+});
+
+describe("long-section beat subdivision", () => {
+  beforeEach(() => {
+    useStore.getState().resetProject();
+  });
+
+  it("snaps long-section boundaries to the beat nearest the ideal subdivision", () => {
+    useStore.getState().loadSong("song-long", "/storage/song.mp3", {
+      duration: 600,
+      bpm: 120,
+      key: "C",
+      beats: [1, 100, 299, 301, 500, 599],
+      downbeats: [],
+      onsets: [],
+      rmsCurve: [0.5],
+      sections: [{ start: 0, end: 600, label: "full" }],
+    }, "song.mp3");
+
+    const clips = useStore.getState().clips;
+    expect(clips).toHaveLength(2);
+    expect(clips[0]!.end).toBeGreaterThan(250);
+    expect(clips[0]!.end).toBeLessThan(350);
+  });
+});
+
+describe("production control persistence", () => {
+  beforeEach(() => {
+    useStore.getState().resetProject();
+  });
+
+  it("includes the production bible and semantic references in project snapshots", () => {
+    useStore.setState({
+      productionBible: {
+        characterProfile: "same 28-year-old African American woman",
+        vehicleProfile: "same glossy black coupe",
+        stylePrompt: "cinematic black orange gold",
+        negativePrompt: "duplicate protagonist",
+        characterReferenceAssetIds: ["char-1"],
+        vehicleReferenceAssetIds: ["car-1"],
+      },
+      referenceAssets: [
+        { id: "char-1", url: "https://cdn.example.com/char.png", role: "character", locked: true },
+        { id: "car-1", url: "https://cdn.example.com/car.png", role: "vehicle", locked: true },
+      ],
+    } as any);
+
+    const snapshot = useStore.getState().getSnapshot() as any;
+    expect(snapshot.productionBible.characterReferenceAssetIds).toEqual(["char-1"]);
+    expect(snapshot.referenceAssets.map((asset: any) => asset.role)).toEqual(["character", "vehicle"]);
+  });
+
+  it("restores production controls while historical snapshots receive safe defaults", () => {
+    useStore.getState().restoreSnapshot({
+      projectId: "proj-1",
+      productionBible: {
+        characterProfile: "locked lead",
+        characterReferenceAssetIds: ["char-1"],
+      },
+      referenceAssets: [
+        { id: "char-1", url: "https://cdn.example.com/char.png", role: "character", locked: true },
+      ],
+    });
+    expect((useStore.getState() as any).productionBible.characterProfile).toBe("locked lead");
+    expect((useStore.getState() as any).referenceAssets).toHaveLength(1);
+
+    useStore.getState().restoreSnapshot({ projectId: "historical" });
+    expect((useStore.getState() as any).productionBible).toBeNull();
+    expect((useStore.getState() as any).referenceAssets).toEqual([]);
   });
 });
