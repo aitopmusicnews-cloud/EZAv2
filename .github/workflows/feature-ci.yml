@@ -5,6 +5,9 @@ on:
     branches:
       - feature/text-to-image
       - feat/agnes-production-controls
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
