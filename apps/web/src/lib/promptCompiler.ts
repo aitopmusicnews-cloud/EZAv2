@@ -106,7 +106,7 @@ function splitNegativeTerms(value?: string | null): string[] {
 }
 
 function automaticNegativeTerms(lock?: SpatialLock | null): string[] {
-  if (!lock) return [];
+  if (!lock || Object.keys(lock).length === 0) return [];
   const terms: string[] = [];
   if (lock.driveSide === "LEFT_HAND_DRIVE") terms.push("right-hand-drive car", "mirrored cabin", "steering wheel on right");
   if (lock.driveSide === "RIGHT_HAND_DRIVE") terms.push("left-hand-drive car", "mirrored cabin", "steering wheel on left");
