@@ -111,6 +111,30 @@ describe("moveBoundary", () => {
   });
 });
 
+describe("long-section beat subdivision", () => {
+  beforeEach(() => {
+    useStore.getState().resetProject();
+  });
+
+  it("snaps long-section boundaries to the beat nearest the ideal subdivision", () => {
+    useStore.getState().loadSong("song-long", "/storage/song.mp3", {
+      duration: 600,
+      bpm: 120,
+      key: "C",
+      beats: [1, 100, 299, 301, 500, 599],
+      downbeats: [],
+      onsets: [],
+      rmsCurve: [0.5],
+      sections: [{ start: 0, end: 600, label: "full" }],
+    }, "song.mp3");
+
+    const clips = useStore.getState().clips;
+    expect(clips).toHaveLength(2);
+    expect(clips[0]!.end).toBeGreaterThan(250);
+    expect(clips[0]!.end).toBeLessThan(350);
+  });
+});
+
 describe("production control persistence", () => {
   beforeEach(() => {
     useStore.getState().resetProject();
