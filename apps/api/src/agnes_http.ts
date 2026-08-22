@@ -97,6 +97,7 @@ async function fetchAgnesWithRetry(
 export async function createAgnesVideo(
   input: {
     prompt: string;
+    negativePrompt?: string;
     imageUrl?: string;
     keyframeUrls?: string[];
     width: number;
@@ -120,6 +121,7 @@ export async function createAgnesVideo(
         body: JSON.stringify({
           model: AGNES_MODEL,
           prompt: input.prompt,
+          ...(input.negativePrompt?.trim() ? { negative_prompt: input.negativePrompt.trim() } : {}),
           ...(input.keyframeUrls?.length
             ? { extra_body: { image: input.keyframeUrls, mode: "keyframes" } }
             : input.imageUrl
@@ -145,12 +147,13 @@ export async function createAgnesVideo(
 }
 
 export async function createAgnesImage(
-  input: { prompt: string; size: string },
+  input: { prompt: string; size: string; referenceImages?: string[] },
   apiKey: string,
   fetchImpl: FetchLike = fetch,
   sleepImpl: SleepLike = defaultSleep,
 ): Promise<AgnesImageResult> {
   let response: Response;
+  const refs = (input.referenceImages ?? []).map((value) => value.trim()).filter(Boolean);
   try {
     response = await fetchAgnesWithRetry(
       AGNES_IMAGE_CREATE_URL,
@@ -163,7 +166,9 @@ export async function createAgnesImage(
         body: JSON.stringify({
           model: AGNES_IMAGE_MODEL,
           prompt: input.prompt,
+          n: 1,
           size: input.size,
+          ...(refs.length === 1 ? { image: refs[0] } : refs.length > 1 ? { image: refs } : {}),
         }),
       },
       fetchImpl,
