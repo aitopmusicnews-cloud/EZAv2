@@ -41,13 +41,14 @@ describe("scheduler production controls", () => {
         end: 8,
         source: "imageToVideo",
         status: "empty",
+        prompt: "mirror shot",
       }],
       jobs: [],
       selectedClipId: "clip-1",
     });
   });
 
-  it("preserves the compiled prompt and negative prompt in the Agnes request", async () => {
+  it("preserves the editable scene prompt while sending and storing the compiled Agnes request", async () => {
     enqueueGeneration({
       clipId: "clip-1",
       source: "imageToVideo",
@@ -70,8 +71,12 @@ describe("scheduler production controls", () => {
 
     await vi.waitFor(() => expect(useStore.getState().clips[0]?.status).toBe("ready"));
     expect(useStore.getState().clips[0]).toMatchObject({
+      prompt: "mirror shot",
       compiledPrompt: "[HARD SPATIAL CONSTRAINTS] left-hand-drive\n\n[SCENE] mirror shot",
       compiledNegativePrompt: "right-hand-drive car, oncoming competitors",
     });
+    expect(mocks.saveClipToServer).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: "[HARD SPATIAL CONSTRAINTS] left-hand-drive\n\n[SCENE] mirror shot",
+    }));
   });
 });
