@@ -1,7 +1,7 @@
 import type { ProductionBible, ReferenceAsset, SpatialLock } from "@mvs/shared";
 
 export type PromptCompileInput = {
-  scenePrompt: string;
+  scenePrompt?: string;
   productionBible?: ProductionBible | null;
   spatialLock?: SpatialLock | null;
   referenceAssets?: ReferenceAsset[];
@@ -78,7 +78,7 @@ function compileCore(input: PromptCompileInput): string {
   ].filter(Boolean).join(" ");
   if (vehicleText) sections.push(`[VEHICLE LOCK]\n${vehicleText}`);
 
-  const scene = input.scenePrompt.trim();
+  const scene = (input.scenePrompt ?? "").trim();
   if (scene) sections.push(`[SCENE]\n${scene}`);
 
   const style = input.productionBible?.stylePrompt?.trim();
