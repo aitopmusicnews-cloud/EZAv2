@@ -146,6 +146,7 @@ export function Sidebar() {
     productionBible: bible,
     spatialLock: effectiveSpatialLock,
     referenceAssets: selectedReferenceAssets,
+    negativePrompt: clip.negativePrompt,
   });
   const compiledNegativePrompt = compileNegativePrompt({
     productionBible: bible,
@@ -203,7 +204,9 @@ export function Sidebar() {
   };
 
   const setSceneSpatialPreset = (key: SceneSpatialPresetKey) => {
-    updateClip(clip.id, { spatialLock: key === "project" ? undefined : spatialPreset(key) });
+    updateClip(clip.id, {
+      spatialLock: key === "project" ? undefined : key === "none" ? {} : spatialPreset(key),
+    });
   };
 
   const onGenerate = () => {
