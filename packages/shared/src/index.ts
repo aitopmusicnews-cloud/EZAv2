@@ -34,6 +34,68 @@ export const AudioAnalysis = z.object({
 });
 export type AudioAnalysis = z.infer<typeof AudioAnalysis>;
 
+export const ReferenceRole = z.enum(["character", "vehicle", "wardrobe", "location", "style", "prop"]);
+export type ReferenceRole = z.infer<typeof ReferenceRole>;
+
+export const ReferenceAsset = z.object({
+  id: z.string().min(1),
+  url: z.string().url(),
+  name: z.string().optional(),
+  role: ReferenceRole,
+  locked: z.boolean().default(false),
+});
+export type ReferenceAsset = z.infer<typeof ReferenceAsset>;
+
+export const SpatialLock = z.object({
+  trafficSystem: z.enum(["US_RIGHT_HAND", "UK_LEFT_HAND", "UNSPECIFIED"]).optional(),
+  driveSide: z.enum(["LEFT_HAND_DRIVE", "RIGHT_HAND_DRIVE", "UNSPECIFIED"]).optional(),
+  driverSeat: z.enum(["FRONT_LEFT", "FRONT_RIGHT", "UNSPECIFIED"]).optional(),
+  passengerSeat: z.enum(["FRONT_LEFT", "FRONT_RIGHT", "UNSPECIFIED"]).optional(),
+  cameraPosition: z.enum([
+    "FRONT_PASSENGER_INTERIOR",
+    "FRONT_DRIVER_INTERIOR",
+    "CENTER_DASH_INTERIOR",
+    "DRIVER_SIDE_EXTERIOR",
+    "PASSENGER_SIDE_EXTERIOR",
+    "FRONT_EXTERIOR",
+    "REAR_EXTERIOR",
+    "AERIAL",
+    "UNSPECIFIED",
+  ]).optional(),
+  cameraDirection: z.enum([
+    "TOWARD_DRIVER_AND_CENTER_MIRROR",
+    "FORWARD",
+    "BACKWARD",
+    "TOWARD_DRIVER",
+    "TOWARD_VEHICLE",
+    "UNSPECIFIED",
+  ]).optional(),
+  vehicleDirection: z.enum(["FORWARD", "REVERSE", "STATIONARY", "UNSPECIFIED"]).optional(),
+  competitorPosition: z.enum(["BEHIND", "AHEAD", "ADJACENT", "NONE", "UNSPECIFIED"]).optional(),
+  competitorDirection: z.enum(["SAME_DIRECTION", "ONCOMING", "NONE", "UNSPECIFIED"]).optional(),
+  rearviewMirrorShows: z.enum([
+    "ROAD_BEHIND_AND_COMPETITORS",
+    "ROAD_BEHIND",
+    "EMPTY_ROAD_BEHIND",
+    "UNSPECIFIED",
+  ]).optional(),
+  windshieldShows: z.enum(["OPEN_ROAD_AHEAD", "ROAD_AHEAD_WITH_TRAFFIC", "UNSPECIFIED"]).optional(),
+  allowOncomingTraffic: z.boolean().optional(),
+});
+export type SpatialLock = z.infer<typeof SpatialLock>;
+
+export const ProductionBible = z.object({
+  id: z.string().optional(),
+  characterProfile: z.string().optional(),
+  vehicleProfile: z.string().optional(),
+  stylePrompt: z.string().optional(),
+  negativePrompt: z.string().optional(),
+  characterReferenceAssetIds: z.array(z.string()).default([]),
+  vehicleReferenceAssetIds: z.array(z.string()).default([]),
+  defaultSpatialLock: SpatialLock.optional(),
+});
+export type ProductionBible = z.infer<typeof ProductionBible>;
+
 export const Clip = z.object({
   id: z.string(),
   start: z.number(),
@@ -51,6 +113,11 @@ export const Clip = z.object({
   keyframeEndUrl: z.string().optional(),
   lastError: z.string().optional(),
   imagePrompt: z.string().optional(),
+  negativePrompt: z.string().optional(),
+  referenceAssetIds: z.array(z.string()).optional(),
+  spatialLock: SpatialLock.optional(),
+  compiledPrompt: z.string().optional(),
+  compiledNegativePrompt: z.string().optional(),
   lipSyncTaskId: z.string().optional(),
   lipSyncStatus: z.enum(["idle", "queued", "generating", "ready", "failed"]).optional(),
   lipSyncSourceVideoUrl: z.string().optional(),
@@ -75,6 +142,8 @@ export const ProjectSnapshot = z.object({
   analysis: AudioAnalysis.optional(),
   clips: z.array(SnapshotClip).optional(),
   characterImageUrl: z.string().optional(),
+  productionBible: ProductionBible.optional(),
+  referenceAssets: z.array(ReferenceAsset).optional(),
   // Kept only so historical snapshots containing these fields still parse.
   avatarId: z.string().optional(),
   avatarName: z.string().optional(),
@@ -84,6 +153,10 @@ export const ProjectSnapshot = z.object({
 }).passthrough();
 export type ProjectSnapshot = z.infer<typeof ProjectSnapshot>;
 
+const VideoPromptFields = {
+  negativePrompt: z.string().optional(),
+};
+
 export const ImageToVideoRequest = z.object({
   model: z.literal(AGNES_VIDEO_MODEL).optional(),
   promptImage: z.string().min(1),
@@ -91,6 +164,7 @@ export const ImageToVideoRequest = z.object({
   ratio: z.string().optional(),
   aspectRatio: z.string().optional(),
   duration: z.number().positive(),
+  ...VideoPromptFields,
 });
 export type ImageToVideoRequest = z.infer<typeof ImageToVideoRequest>;
 
@@ -102,6 +176,7 @@ export const KeyframeToVideoRequest = z.object({
   ratio: z.string().optional(),
   aspectRatio: z.string().optional(),
   duration: z.number().positive(),
+  ...VideoPromptFields,
 });
 export type KeyframeToVideoRequest = z.infer<typeof KeyframeToVideoRequest>;
 
@@ -111,12 +186,22 @@ export const TextToVideoRequest = z.object({
   ratio: z.string().optional(),
   aspectRatio: z.string().optional(),
   duration: z.number().positive(),
+  ...VideoPromptFields,
 });
 export type TextToVideoRequest = z.infer<typeof TextToVideoRequest>;
 
 export const TextToImageRequest = z.object({
   promptText: z.string().trim().min(1).max(4000),
   size: z.string().regex(/^\d{3,4}x\d{3,4}$/).default("1536x864"),
+  mode: z.enum(["text2img", "img2img", "compose"]).default("text2img"),
+  referenceImages: z.array(ReferenceAsset).max(8).default([]),
+}).superRefine((value, ctx) => {
+  if (value.mode === "img2img" && value.referenceImages.length !== 1) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["referenceImages"], message: "img2img requires exactly one reference image" });
+  }
+  if (value.mode === "compose" && value.referenceImages.length < 2) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["referenceImages"], message: "compose requires at least two reference images" });
+  }
 });
 export type TextToImageRequest = z.infer<typeof TextToImageRequest>;
 
