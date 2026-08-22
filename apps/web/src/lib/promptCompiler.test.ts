@@ -96,6 +96,10 @@ describe("prompt compiler", () => {
     expect(negative.match(/duplicate protagonist/g)?.length).toBe(1);
   });
 
+  it("adds no automatic spatial negatives when a scene explicitly uses an empty no-lock override", () => {
+    expect(compileNegativePrompt({ spatialLock: {}, productionBible: {} })).toBe("");
+  });
+
   it("flags obvious spatial contradictions before generation", () => {
     expect(validateSpatialLock({
       driveSide: "LEFT_HAND_DRIVE",
