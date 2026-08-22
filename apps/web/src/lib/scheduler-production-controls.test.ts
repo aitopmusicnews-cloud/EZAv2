@@ -1,15 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const startImageToVideo = vi.fn(async () => ({ id: "task-1" }));
-const pollTask = vi.fn(async () => ({ status: "SUCCEEDED", output: ["https://cdn.example.com/result.mp4"] }));
-const saveClipToServer = vi.fn(async (input: any) => ({ ...input, savedAt: new Date().toISOString() }));
-
-vi.mock("./api.js", () => ({
-  startImageToVideo,
+const mocks = vi.hoisted(() => ({
+  startImageToVideo: vi.fn(async () => ({ id: "task-1" })),
   startKeyframeToVideo: vi.fn(async () => ({ id: "task-key" })),
   startTextToVideo: vi.fn(async () => ({ id: "task-text" })),
-  pollTask,
-  saveClipToServer,
+  pollTask: vi.fn(async () => ({ status: "SUCCEEDED", output: ["https://cdn.example.com/result.mp4"] })),
+  saveClipToServer: vi.fn(async (input: any) => ({ ...input, savedAt: new Date().toISOString() })),
+}));
+
+vi.mock("./api.js", () => ({
+  startImageToVideo: mocks.startImageToVideo,
+  startKeyframeToVideo: mocks.startKeyframeToVideo,
+  startTextToVideo: mocks.startTextToVideo,
+  pollTask: mocks.pollTask,
+  saveClipToServer: mocks.saveClipToServer,
   ApiError: class ApiError extends Error {
     rateLimited = false;
   },
@@ -54,10 +58,10 @@ describe("scheduler production controls", () => {
       sectionLabel: "verse",
       energy: 0.8,
       model: "agnes-video-v2.0",
-    } as any);
+    });
 
-    await vi.waitFor(() => expect(startImageToVideo).toHaveBeenCalledTimes(1));
-    expect(startImageToVideo.mock.calls[0]![0]).toMatchObject({
+    await vi.waitFor(() => expect(mocks.startImageToVideo).toHaveBeenCalledTimes(1));
+    expect(mocks.startImageToVideo.mock.calls[0]![0]).toMatchObject({
       promptText: "[HARD SPATIAL CONSTRAINTS] left-hand-drive\n\n[SCENE] mirror shot",
       negativePrompt: "right-hand-drive car, oncoming competitors",
       promptImage: "https://cdn.example.com/start.png",
