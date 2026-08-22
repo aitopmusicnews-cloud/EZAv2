@@ -42,7 +42,7 @@ export const ReferenceAsset = z.object({
   url: z.string().url(),
   name: z.string().optional(),
   role: ReferenceRole,
-  locked: z.boolean().default(false),
+  locked: z.boolean().optional(),
 });
 export type ReferenceAsset = z.infer<typeof ReferenceAsset>;
 
@@ -90,8 +90,8 @@ export const ProductionBible = z.object({
   vehicleProfile: z.string().optional(),
   stylePrompt: z.string().optional(),
   negativePrompt: z.string().optional(),
-  characterReferenceAssetIds: z.array(z.string()).default([]),
-  vehicleReferenceAssetIds: z.array(z.string()).default([]),
+  characterReferenceAssetIds: z.array(z.string()).optional(),
+  vehicleReferenceAssetIds: z.array(z.string()).optional(),
   defaultSpatialLock: SpatialLock.optional(),
 });
 export type ProductionBible = z.infer<typeof ProductionBible>;
@@ -193,13 +193,15 @@ export type TextToVideoRequest = z.infer<typeof TextToVideoRequest>;
 export const TextToImageRequest = z.object({
   promptText: z.string().trim().min(1).max(4000),
   size: z.string().regex(/^\d{3,4}x\d{3,4}$/).default("1536x864"),
-  mode: z.enum(["text2img", "img2img", "compose"]).default("text2img"),
-  referenceImages: z.array(ReferenceAsset).max(8).default([]),
+  mode: z.enum(["text2img", "img2img", "compose"]).optional(),
+  referenceImages: z.array(ReferenceAsset).max(8).optional(),
 }).superRefine((value, ctx) => {
-  if (value.mode === "img2img" && value.referenceImages.length !== 1) {
+  const mode = value.mode ?? "text2img";
+  const refs = value.referenceImages ?? [];
+  if (mode === "img2img" && refs.length !== 1) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["referenceImages"], message: "img2img requires exactly one reference image" });
   }
-  if (value.mode === "compose" && value.referenceImages.length < 2) {
+  if (mode === "compose" && refs.length < 2) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["referenceImages"], message: "compose requires at least two reference images" });
   }
 });
