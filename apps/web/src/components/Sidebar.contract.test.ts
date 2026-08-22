@@ -51,6 +51,8 @@ describe("text-to-image and manual lip-sync contracts", () => {
     expect(sidebar).toMatch(/validateSpatialLock/);
     expect(sidebar).toMatch(/referenceImages/);
     expect(sidebar).toMatch(/mode:\s*imageGenerationMode/);
+    expect(sidebar).toMatch(/compileImagePrompt\(\{[\s\S]*?negativePrompt:\s*clip\.negativePrompt/);
+    expect(sidebar).toMatch(/key === "none"\s*\?\s*\{\}/);
   });
 
   it("routes manual lip-sync through the selected song slice", async () => {
