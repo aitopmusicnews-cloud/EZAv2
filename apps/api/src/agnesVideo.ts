@@ -40,6 +40,7 @@ type AgnesJobState = {
   sourceMode: "textToVideo" | "imageToVideo" | "keyframeToVideo";
   imageSourceUrl?: string;
   keyframeEndUrl?: string;
+  negativePrompt?: string;
   currentSegment: number;
   segments: AgnesSegmentJob[];
 };
@@ -111,6 +112,7 @@ async function createSegment(
   return createAgnesVideo(
     {
       prompt,
+      ...(state.negativePrompt ? { negativePrompt: state.negativePrompt } : {}),
       ...(input.imageUrl ? { imageUrl: input.imageUrl } : {}),
       ...(input.keyframeUrls?.length ? { keyframeUrls: input.keyframeUrls } : {}),
       width,
@@ -188,6 +190,7 @@ export async function startAgnesVideo(
 ): Promise<GenerationTask> {
   const prompt = req.promptText.trim();
   if (!prompt) throw new Error("A video prompt is required.");
+  const negativePrompt = req.negativePrompt?.trim();
   const duration = requireTimelineDuration(req.duration);
   const initialImage = sourceImage(req);
   const endImage = sourceEndImage(req);
@@ -206,6 +209,7 @@ export async function startAgnesVideo(
     sourceMode,
     ...(initialImage ? { imageSourceUrl: initialImage } : {}),
     ...(endImage ? { keyframeEndUrl: endImage } : {}),
+    ...(negativePrompt ? { negativePrompt } : {}),
     currentSegment: 0,
     segments,
   };
