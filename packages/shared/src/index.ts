@@ -39,7 +39,8 @@ export type ReferenceRole = z.infer<typeof ReferenceRole>;
 
 export const ReferenceAsset = z.object({
   id: z.string().min(1),
-  url: z.string().url(),
+  // App-local /storage paths are valid here; the API resolves them to provider-facing HTTPS URLs before calling Agnes.
+  url: z.string().min(1),
   name: z.string().optional(),
   role: ReferenceRole,
   locked: z.boolean().optional(),
