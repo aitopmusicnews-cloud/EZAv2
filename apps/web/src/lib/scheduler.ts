@@ -161,7 +161,6 @@ export function enqueueGeneration(input: EnqueueInput): string {
     source: input.source,
     model: AGNES_MODEL,
     status: "queued",
-    prompt: input.prompt,
     compiledPrompt: input.prompt,
     compiledNegativePrompt: negativePrompt || undefined,
     lastError: undefined,
@@ -301,12 +300,13 @@ async function run(jobId: string): Promise<void> {
 
 async function persistGeneratedClip(clip: Clip, videoUrl: string, sectionLabel: string): Promise<void> {
   try {
+    const providerPrompt = clip.compiledPrompt ?? clip.prompt ?? null;
     const saved = await saveClipToServer({
       id: clip.id,
       name: clip.prompt?.slice(0, 60) || `${sectionLabel} clip`,
       videoUrl,
       source: clip.source,
-      prompt: clip.prompt || null,
+      prompt: providerPrompt,
       duration: clip.end - clip.start,
       sectionLabel,
       model: AGNES_MODEL,
