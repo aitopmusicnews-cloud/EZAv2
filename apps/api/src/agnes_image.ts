@@ -8,8 +8,17 @@ import { storage } from "./storage.js";
 export async function generateAndSaveAgnesImage(input: TextToImageRequest) {
   if (!config.AGNES_API_KEY) throw new Error("Agnes image generation is not configured.");
 
+  const mode = input.mode ?? "text2img";
+  const referenceImages = mode === "text2img"
+    ? []
+    : (input.referenceImages ?? []).map((asset) => asset.url);
+
   const result = await createAgnesImage(
-    { prompt: input.promptText, size: input.size },
+    {
+      prompt: input.promptText,
+      size: input.size,
+      ...(referenceImages.length ? { referenceImages } : {}),
+    },
     config.AGNES_API_KEY,
   );
 
@@ -26,7 +35,7 @@ export async function generateAndSaveAgnesImage(input: TextToImageRequest) {
     id: `img_${randomUUID().replaceAll("-", "").slice(0, 20)}`,
     name: input.promptText.slice(0, 80),
     url,
-    source: "textToImage",
+    source: mode === "compose" ? "compose" : mode === "img2img" ? "img2img" : "textToImage",
     prompt: input.promptText,
     model: AGNES_IMAGE_MODEL,
   });
