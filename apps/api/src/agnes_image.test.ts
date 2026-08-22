@@ -40,6 +40,38 @@ describe("Agnes image integration", () => {
     });
   });
 
+  it("sends one URL reference for img2img and multiple URL references for compose", async () => {
+    const singleFetch = vi.fn().mockResolvedValue(jsonResponse({ data: [{ url: "https://cdn.example.com/one.png" }] }));
+    await createAgnesImage(
+      { prompt: "preserve this person", size: "1536x864", referenceImages: ["https://cdn.example.com/character.png"] },
+      "secret",
+      singleFetch as typeof fetch,
+      async () => {},
+    );
+    const singleRequest = JSON.parse(String(singleFetch.mock.calls[0]![1]!.body));
+    expect(singleRequest.image).toBe("https://cdn.example.com/character.png");
+
+    const composeFetch = vi.fn().mockResolvedValue(jsonResponse({ data: [{ url: "https://cdn.example.com/composed.png" }] }));
+    await createAgnesImage(
+      {
+        prompt: "same woman driving the same car",
+        size: "1536x864",
+        referenceImages: [
+          "https://cdn.example.com/character.png",
+          "https://cdn.example.com/car.png",
+        ],
+      },
+      "secret",
+      composeFetch as typeof fetch,
+      async () => {},
+    );
+    const composeRequest = JSON.parse(String(composeFetch.mock.calls[0]![1]!.body));
+    expect(composeRequest.image).toEqual([
+      "https://cdn.example.com/character.png",
+      "https://cdn.example.com/car.png",
+    ]);
+  });
+
   it("applies the same 503 retry to video creation", async () => {
     const sleep = vi.fn(async () => {});
     const fetchMock = vi.fn()
@@ -53,6 +85,24 @@ describe("Agnes image integration", () => {
       sleep,
     )).resolves.toEqual({ videoId: "video-1", taskId: null });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("forwards video negative prompts to Agnes", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ video_id: "video-negative" }));
+    await createAgnesVideo(
+      {
+        prompt: "driver checks rearview mirror",
+        negativePrompt: "right-hand-drive car, oncoming competitors",
+        width: 1152,
+        height: 768,
+        numFrames: 121,
+      },
+      "secret",
+      fetchMock as typeof fetch,
+      async () => {},
+    );
+    const request = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body));
+    expect(request.negative_prompt).toBe("right-hand-drive car, oncoming competitors");
   });
 
   it("surfaces a short safe provider error after retries are exhausted", async () => {
