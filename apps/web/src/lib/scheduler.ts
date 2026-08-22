@@ -32,6 +32,7 @@ export type Job = {
     seedImageUrl: string;
     endImageUrl: string;
     prompt: string;
+    negativePrompt: string;
     duration: number;
     sectionLabel: string;
     energy: number;
@@ -45,6 +46,7 @@ export type EnqueueInput = {
   seedImageUrl: string;
   endImageUrl?: string;
   prompt: string;
+  negativePrompt?: string;
   duration: number;
   sectionLabel: string;
   energy: number;
@@ -131,6 +133,7 @@ export function enqueueGeneration(input: EnqueueInput): string {
   }
 
   const id = newJobId();
+  const negativePrompt = input.negativePrompt?.trim() ?? "";
   const job: Job = {
     id,
     clipId: input.clipId,
@@ -145,6 +148,7 @@ export function enqueueGeneration(input: EnqueueInput): string {
       seedImageUrl: input.seedImageUrl,
       endImageUrl: input.endImageUrl ?? "",
       prompt: input.prompt,
+      negativePrompt,
       duration: generationDuration(input.duration),
       sectionLabel: input.sectionLabel,
       energy: input.energy,
@@ -158,6 +162,8 @@ export function enqueueGeneration(input: EnqueueInput): string {
     model: AGNES_MODEL,
     status: "queued",
     prompt: input.prompt,
+    compiledPrompt: input.prompt,
+    compiledNegativePrompt: negativePrompt || undefined,
     lastError: undefined,
   });
   pump();
@@ -199,10 +205,12 @@ function setJobPatch(jobId: string, patch: Partial<Job>): void {
 
 async function startTask(job: Job): Promise<{ id: string }> {
   const promptText = job.input.prompt.trim();
+  const negativePrompt = job.input.negativePrompt.trim() || undefined;
   if (!promptText) throw new Error("A scene prompt is required");
   if (job.input.source === "textToVideo") {
     return startTextToVideo({
       promptText,
+      ...(negativePrompt ? { negativePrompt } : {}),
       model: AGNES_MODEL,
       aspectRatio: "16:9",
       duration: job.input.duration,
@@ -217,6 +225,7 @@ async function startTask(job: Job): Promise<{ id: string }> {
       promptImage: job.input.seedImageUrl,
       promptImageEnd: job.input.endImageUrl,
       promptText,
+      ...(negativePrompt ? { negativePrompt } : {}),
       aspectRatio: "16:9",
       duration: job.input.duration,
       model: AGNES_MODEL,
@@ -225,6 +234,7 @@ async function startTask(job: Job): Promise<{ id: string }> {
   return startImageToVideo({
     promptImage: job.input.seedImageUrl,
     promptText,
+    ...(negativePrompt ? { negativePrompt } : {}),
     aspectRatio: "16:9",
     duration: job.input.duration,
     model: AGNES_MODEL,
