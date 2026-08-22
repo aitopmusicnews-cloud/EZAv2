@@ -88,7 +88,9 @@ function compileCore(input: PromptCompileInput): string {
 }
 
 export function compileImagePrompt(input: PromptCompileInput): string {
-  return compileCore(input);
+  const core = compileCore(input);
+  const negative = compileNegativePrompt(input);
+  return negative ? `${core}\n\n[AVOID]\n${negative}` : core;
 }
 
 export function compileVideoPrompt(input: PromptCompileInput): string {
