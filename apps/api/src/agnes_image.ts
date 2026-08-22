@@ -3,15 +3,23 @@ import { AGNES_IMAGE_MODEL, type TextToImageRequest } from "@mvs/shared";
 import { config } from "./config.js";
 import { createAgnesImage } from "./agnes_http.js";
 import { saveImage } from "./images.js";
-import { storage } from "./storage.js";
+import { providerUrl, storage } from "./storage.js";
+
+const PROVIDER_IMAGE_TTL_SECONDS = 15 * 60;
 
 export async function generateAndSaveAgnesImage(input: TextToImageRequest) {
   if (!config.AGNES_API_KEY) throw new Error("Agnes image generation is not configured.");
 
   const mode = input.mode ?? "text2img";
-  const referenceImages = mode === "text2img"
+  const rawReferences = mode === "text2img"
     ? []
     : (input.referenceImages ?? []).map((asset) => asset.url);
+  const referenceImages = await Promise.all(rawReferences.map(async (rawUrl) => {
+    const url = await providerUrl(rawUrl, PROVIDER_IMAGE_TTL_SECONDS);
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") throw new Error("Agnes image references must resolve to HTTPS URLs.");
+    return url;
+  }));
 
   const result = await createAgnesImage(
     {
