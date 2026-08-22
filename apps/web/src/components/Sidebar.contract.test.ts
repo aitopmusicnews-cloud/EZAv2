@@ -37,6 +37,22 @@ describe("text-to-image and manual lip-sync contracts", () => {
     expect(sidebar).not.toMatch(/enqueueGeneration\([^)]*textToImage/s);
   });
 
+  it("exposes structured Agnes production controls and compiles them before generation", async () => {
+    const sidebar = await read("apps/web/src/components/Sidebar.tsx");
+    expect(sidebar).toMatch(/Production Bible/);
+    expect(sidebar).toMatch(/Locked character reference/);
+    expect(sidebar).toMatch(/Locked vehicle reference/);
+    expect(sidebar).toMatch(/Spatial lock/);
+    expect(sidebar).toMatch(/Scene negative prompt/);
+    expect(sidebar).toMatch(/What Agnes will receive/);
+    expect(sidebar).toMatch(/compileImagePrompt/);
+    expect(sidebar).toMatch(/compileVideoPrompt/);
+    expect(sidebar).toMatch(/compileNegativePrompt/);
+    expect(sidebar).toMatch(/validateSpatialLock/);
+    expect(sidebar).toMatch(/referenceImages/);
+    expect(sidebar).toMatch(/mode:\s*imageGenerationMode/);
+  });
+
   it("routes manual lip-sync through the selected song slice", async () => {
     const server = await read("apps/api/src/server.ts");
     const api = await read("apps/web/src/lib/api.ts");
