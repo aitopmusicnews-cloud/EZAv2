@@ -28,6 +28,12 @@ describe("production control schemas", () => {
     });
   });
 
+  it("allows detailed compiled image prompts beyond the old 4k app limit", () => {
+    const promptText = "detailed spatial and cinematic instruction ".repeat(150);
+    expect(promptText.length).toBeGreaterThan(4000);
+    expect(() => TextToImageRequest.parse({ promptText })).not.toThrow();
+  });
+
   it("accepts app-local reference paths that the API can convert to provider URLs", () => {
     const parsed = TextToImageRequest.parse({
       promptText: "same woman and car",
