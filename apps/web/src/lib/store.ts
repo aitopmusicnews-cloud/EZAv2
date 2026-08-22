@@ -21,7 +21,7 @@ function nearestBeat(t: number, beats: number[]): number | null {
   let best = beats[0]!;
   let bestDist = Math.abs(t - best);
   for (const b of beats) {
-    const d = Math.abs(t - best);
+    const d = Math.abs(t - b);
     if (d < bestDist) {
       best = b;
       bestDist = d;
