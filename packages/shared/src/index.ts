@@ -192,7 +192,7 @@ export const TextToVideoRequest = z.object({
 export type TextToVideoRequest = z.infer<typeof TextToVideoRequest>;
 
 export const TextToImageRequest = z.object({
-  promptText: z.string().trim().min(1).max(4000),
+  promptText: z.string().trim().min(1).max(12000),
   size: z.string().regex(/^\d{3,4}x\d{3,4}$/).default("1536x864"),
   mode: z.enum(["text2img", "img2img", "compose"]).optional(),
   referenceImages: z.array(ReferenceAsset).max(8).optional(),
