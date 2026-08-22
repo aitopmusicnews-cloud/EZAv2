@@ -51,6 +51,19 @@ describe("prompt compiler", () => {
     expect(prompt.indexOf("[SCENE]")).toBeLessThan(prompt.indexOf("[STYLE]"));
   });
 
+  it("embeds image negatives into an AVOID section because Agnes Image has no separate negative field", () => {
+    const prompt = compileImagePrompt({
+      scenePrompt: "Mirror shot",
+      productionBible: bible,
+      spatialLock: spatial,
+      referenceAssets: references,
+      negativePrompt: "right-hand-drive car",
+    });
+    expect(prompt).toContain("[AVOID]");
+    expect(prompt).toContain("right-hand-drive car");
+    expect(prompt).toContain("woman in passenger seat");
+  });
+
   it("spells out left-hand-drive, passenger-camera, mirror, and rival direction logic", () => {
     const prompt = compileVideoPrompt({
       scenePrompt: "She glances at the mirror and smirks.",
