@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { AudioAnalysis, AudioSection, Clip, DirectorPlan, DirectorShot, DirectorStage, ProductionBible, ReferenceAsset } from "@mvs/shared";
+import type { AudioAnalysis, AudioSection, Clip, DirectorPlan, DirectorShot, DirectorStage, LyricDocument, ProductionBible, ReferenceAsset, SongUnderstanding } from "@mvs/shared";
 import { AGNES_VIDEO_MODEL, ProjectSnapshot } from "@mvs/shared";
 import type { Job } from "./scheduler.js";
 import { getWs } from "./wavesurfer-ref.js";
@@ -91,6 +91,19 @@ function subdivideSection(section: AudioSection, beats: number[]): Clip[] {
   return clips;
 }
 
+function invalidateDirectorPlan(plan: DirectorPlan | null): DirectorPlan | null {
+  if (!plan) return null;
+  return {
+    ...plan,
+    approvedAt: undefined,
+    shots: plan.shots.map((shot) => ({
+      ...shot,
+      imageApproved: false,
+      videoApproved: false,
+    })),
+  };
+}
+
 function directorClips(plan: DirectorPlan, bible: ProductionBible | null): Clip[] {
   const referenceAssetIds = Array.from(new Set([
     ...(bible?.characterReferenceAssetIds ?? []),
@@ -126,6 +139,8 @@ type State = {
   lookbook: string[];
   productionBible: ProductionBible | null;
   referenceAssets: ReferenceAsset[];
+  lyricDocument: LyricDocument | null;
+  songUnderstanding: SongUnderstanding | null;
   zoom: number;
   jobs: Job[];
   directorVision: string;
@@ -155,6 +170,14 @@ type State = {
   setProductionBible: (bible: ProductionBible | null) => void;
   upsertReferenceAsset: (asset: ReferenceAsset) => void;
   removeReferenceAsset: (id: string) => void;
+
+  setLyricDocument: (document: LyricDocument | null) => void;
+  updateLyricSegment: (id: string, text: string) => void;
+  approveLyrics: () => void;
+  markInstrumental: () => void;
+  setSongUnderstanding: (understanding: SongUnderstanding | null) => void;
+  updateSongUnderstanding: (patch: Partial<SongUnderstanding>) => void;
+  approveSongUnderstanding: () => void;
 
   setDirectorVision: (vision: string) => void;
   buildDirectorPlan: () => DirectorPlan | null;
@@ -197,6 +220,8 @@ const emptyState = {
   lookbook: [],
   productionBible: null,
   referenceAssets: [],
+  lyricDocument: null,
+  songUnderstanding: null,
   zoom: 1,
   jobs: [],
   directorVision: "",
@@ -226,6 +251,8 @@ export const useStore = create<State>()(
           lookbook: s.lookbook,
           productionBible: s.productionBible,
           referenceAssets: s.referenceAssets,
+          lyricDocument: s.lyricDocument,
+          songUnderstanding: s.songUnderstanding,
           directorVision: s.directorVision,
           directorPlan: s.directorPlan,
           directorStage: s.directorStage,
@@ -273,9 +300,11 @@ export const useStore = create<State>()(
           lookbook: s.lookbook ?? [],
           productionBible: s.productionBible ?? null,
           referenceAssets: s.referenceAssets ?? [],
+          lyricDocument: s.lyricDocument ?? null,
+          songUnderstanding: s.songUnderstanding ?? null,
           directorVision: s.directorVision ?? "",
           directorPlan: s.directorPlan ?? null,
-          directorStage: s.directorStage ?? (s.directorPlan ? "plan" : "song"),
+          directorStage: s.directorStage === "clips" ? "takes" : (s.directorStage ?? (s.directorPlan ? "plan" : "song")),
           directorFinalUrl: s.directorFinalUrl ?? null,
           zoom: s.zoom ?? 1,
           playhead: s.playhead ?? 0,
@@ -299,6 +328,8 @@ export const useStore = create<State>()(
           isPlaying: false,
           zoom: 1,
           jobs: [],
+          lyricDocument: null,
+          songUnderstanding: null,
           directorPlan: null,
           directorStage: "song",
           directorFinalUrl: null,
@@ -315,6 +346,8 @@ export const useStore = create<State>()(
           playhead: 0,
           isPlaying: false,
           jobs: [],
+          lyricDocument: null,
+          songUnderstanding: null,
           directorVision: "",
           directorPlan: null,
           directorStage: "song",
@@ -372,6 +405,78 @@ export const useStore = create<State>()(
             referenceAssetIds: clip.referenceAssetIds?.filter((assetId) => assetId !== id),
           })),
         })),
+
+      setLyricDocument: (lyricDocument) =>
+        set((state) => ({
+          lyricDocument,
+          songUnderstanding: null,
+          directorPlan: invalidateDirectorPlan(state.directorPlan),
+          directorFinalUrl: null,
+          directorStage: lyricDocument ? "lyrics" as const : "song" as const,
+        })),
+      updateLyricSegment: (id, text) =>
+        set((state) => {
+          if (!state.lyricDocument) return state;
+          const segments = state.lyricDocument.segments.map((segment) => segment.id === id
+            ? { ...segment, text, source: "manual" as const }
+            : segment);
+          const lyricDocument: LyricDocument = {
+            ...state.lyricDocument,
+            rawText: segments.map((segment) => segment.text).join("\n"),
+            segments,
+            correctedAt: Date.now(),
+            approvedAt: undefined,
+          };
+          return {
+            lyricDocument,
+            songUnderstanding: null,
+            directorPlan: invalidateDirectorPlan(state.directorPlan),
+            directorFinalUrl: null,
+            directorStage: "lyrics" as const,
+          };
+        }),
+      approveLyrics: () =>
+        set((state) => {
+          const document = state.lyricDocument;
+          if (!document) return state;
+          const valid = document.source === "instrumental" || document.segments.some((segment) => segment.text.trim().length > 0);
+          if (!valid) return state;
+          return {
+            lyricDocument: { ...document, approvedAt: Date.now() },
+            directorStage: "understanding" as const,
+          };
+        }),
+      markInstrumental: () =>
+        set((state) => ({
+          lyricDocument: { source: "instrumental" as const, rawText: "", segments: [], approvedAt: Date.now() },
+          songUnderstanding: null,
+          directorPlan: invalidateDirectorPlan(state.directorPlan),
+          directorFinalUrl: null,
+          directorStage: "understanding" as const,
+        })),
+      setSongUnderstanding: (songUnderstanding) =>
+        set((state) => ({
+          songUnderstanding,
+          directorPlan: invalidateDirectorPlan(state.directorPlan),
+          directorFinalUrl: null,
+          directorStage: songUnderstanding ? "understanding" as const : state.directorStage,
+        })),
+      updateSongUnderstanding: (patch) =>
+        set((state) => {
+          if (!state.songUnderstanding) return state;
+          const songUnderstanding = { ...state.songUnderstanding, ...patch, approvedAt: undefined };
+          return {
+            songUnderstanding,
+            directorPlan: invalidateDirectorPlan(state.directorPlan),
+            directorFinalUrl: null,
+            directorStage: "understanding" as const,
+          };
+        }),
+      approveSongUnderstanding: () =>
+        set((state) => state.songUnderstanding ? {
+          songUnderstanding: { ...state.songUnderstanding, approvedAt: Date.now() },
+          directorStage: "treatment" as const,
+        } : state),
 
       setDirectorVision: (directorVision) => set({ directorVision }),
       buildDirectorPlan: () => {
@@ -631,6 +736,8 @@ export const useStore = create<State>()(
           lookbook: s.lookbook,
           productionBible: s.productionBible,
           referenceAssets: s.referenceAssets,
+          lyricDocument: s.lyricDocument,
+          songUnderstanding: s.songUnderstanding,
           directorVision: s.directorVision,
           directorPlan: s.directorPlan,
           directorStage: s.directorStage,
@@ -666,7 +773,12 @@ export const useStore = create<State>()(
           } as Clip;
         });
         const { avatarId: _legacyAvatarId, avatarName: _legacyAvatarName, ...persistedProject } = ps;
-        return { ...current, ...persistedProject, clips };
+        return {
+          ...current,
+          ...persistedProject,
+          directorStage: ps.directorStage === "clips" ? "takes" : (ps.directorStage ?? current.directorStage),
+          clips,
+        };
       },
     }
   )

@@ -28,14 +28,36 @@ jobs:
           node-version: 22.16.0
           cache: pnpm
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: audio_analysis/requirements.txt
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install audio analysis dependencies
+        run: python3 -m pip install -r audio_analysis/requirements.txt
 
       - name: Unit tests
         run: pnpm test
 
+      - name: Audio analyzer regression
+        working-directory: audio_analysis
+        run: PYTHONPATH=. python3 -m unittest test_audio_analysis -v
+
       - name: Final render soundtrack regression
         run: node tests/final-render-policy.test.mjs
+
+      - name: Browser credential isolation
+        shell: bash
+        run: |
+          if grep -R -E "process\.env\.OPENAI_API_KEY|import\.meta\.env[^[:space:]]*OPENAI_API_KEY" apps/web packages/shared; then
+            echo "OPENAI_API_KEY must remain server-side."
+            exit 1
+          fi
 
       - name: Typecheck
         run: pnpm typecheck
