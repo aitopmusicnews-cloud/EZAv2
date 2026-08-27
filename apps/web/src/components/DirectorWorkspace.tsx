@@ -253,7 +253,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
             busy={busy}
             onGenerate={generateImages}
             onRegenerate={regenerateImage}
-            onApprove={(id, approved) => approveDirectorImage(id, approved)}
+            onApprove={(id: string, approved: boolean) => approveDirectorImage(id, approved)}
             onApproveAll={approveAllStoryboardImages}
             onEditPlan={() => setDirectorStage("plan")}
             onGenerateVideos={generateVideos}
@@ -266,7 +266,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
           <ClipsStep
             plan={directorPlan}
             clipMap={clipMap}
-            onApprove={(id, approved) => approveDirectorClip(id, approved)}
+            onApprove={(id: string, approved: boolean) => approveDirectorClip(id, approved)}
             onApproveAll={approveAllReadyDirectorClips}
             onRegenerate={regenerateVideo}
             onBack={() => setDirectorStage("images")}

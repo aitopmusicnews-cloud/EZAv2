@@ -120,7 +120,7 @@ export function approveAllReadyDirectorClips(): void {
 }
 
 export async function renderDirectorFinal(
-  onUpdate?: Parameters<typeof renderTimeline>[1]["onUpdate"],
+  onUpdate?: NonNullable<Parameters<typeof renderTimeline>[1]>["onUpdate"],
 ): Promise<string> {
   const state = useStore.getState();
   const plan = approvedPlan();
