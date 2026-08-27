@@ -73,6 +73,20 @@ The Director must build coherent scenes and visual setups before individual shot
 
 Professional music videos need recurring worlds, motifs, setups, and hero footage. BeatSync should deliberately reuse approved scenes and evolve them across song sections instead of generating a new unrelated world for every cut.
 
+### 3.6 Creative decisions require reasons
+
+The Director must not choose camera, framing, scene, wardrobe, location, or shot role by cycling through canned presets. Every scene and shot must store a concise creative rationale tied to at least one of:
+- approved treatment,
+- lyric meaning,
+- musical structure,
+- narrative progression,
+- performance purpose,
+- coverage need,
+- continuity need,
+- repeated-section evolution.
+
+BPM and energy may influence pace/intensity, but cannot select the story or visual concept by themselves.
+
 ## 4. High-Level Architecture
 
 ### 4.1 Existing EZAv2 responsibilities retained
@@ -323,6 +337,7 @@ interface DirectorScene {
   id: string;
   title: string;
   purpose: string;
+  rationale: string;
   songSectionIds: string[];
   locationId?: string;
   wardrobeId?: string;
@@ -384,6 +399,7 @@ The final edit can reuse, trim, reorder, and revisit approved hero footage rathe
 
 Each `DirectorShot` should reference its parent scene and include:
 - purpose/role,
+- creative rationale,
 - source song section,
 - lyric moment(s), if relevant,
 - subject/action,
@@ -396,6 +412,12 @@ Each `DirectorShot` should reference its parent scene and include:
 - continuity constraints,
 - hero priority,
 - take count target.
+
+### 10.4 No canned shot cycling
+
+The professional planner must not implement coverage by incrementing through arrays such as `CAMERA_CYCLE` or `FRAMING_CYCLE` as the primary decision mechanism. A reusable option library is acceptable only after the Director has established why a shot exists and what visual function it must serve.
+
+The UI should expose `Why this shot?` from the stored rationale when the user wants to inspect the Director's decision.
 
 ## 11. Prompt Compilation
 
@@ -691,11 +713,12 @@ The Director is considered successful only if it can produce plans that demonstr
 - usable coverage rather than isolated glamour frames,
 - strong hero moments,
 - evolving repeated sections,
+- rationale-backed scene and shot choices,
 - editable treatment and plan before generation,
 - traceable prompt/reference inheritance,
 - versioned takes and edits.
 
-A plan that merely maps high energy to “Hero Performance” and low energy to “Story/B-roll” does not meet this quality bar.
+A plan that merely maps high energy to “Hero Performance” and low energy to “Story/B-roll” does not meet this quality bar. A plan that merely rotates through camera/framing presets also does not meet this bar.
 
 ## 22. Migration From Current Director
 
@@ -708,7 +731,7 @@ Its audio functions may still be reused for:
 - beat/downbeat alignment,
 - section timing.
 
-Its generic story-role/idea generation must not be used as semantic song interpretation.
+Its generic story-role/idea generation and camera/framing cycling must not be used as semantic song interpretation or professional shot design.
 
 Existing projects created under the old Director should remain openable. They can be labeled `Legacy Director Plan` and optionally upgraded by running the new Lyrics -> Understanding -> Treatment pipeline.
 
@@ -744,6 +767,8 @@ Implementation must include automated coverage for at least:
 - repeated chorus scenes evolve instead of randomizing,
 - shot budget remains controlled,
 - scene inheritance reaches prompts,
+- every scene/shot has a rationale,
+- shot decisions do not depend on sequential camera/framing cycling,
 - raw provider prompts remain derived outputs.
 
 ### Generation
@@ -777,6 +802,7 @@ Phase B — Professional Treatment + Planning
 - project-specific Production Bible,
 - scene-first planning,
 - coverage/shot budget,
+- rationale-driven shot design,
 - plan approval.
 
 Phase C — Generation QC
