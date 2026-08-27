@@ -78,11 +78,23 @@ function compileCore(input: PromptCompileInput): string {
   ].filter(Boolean).join(" ");
   if (vehicleText) sections.push(`[VEHICLE LOCK]\n${vehicleText}`);
 
+  const wardrobe = input.productionBible?.wardrobeProfile?.trim();
+  if (wardrobe) sections.push(`[WARDROBE]\n${wardrobe}`);
+
+  const location = input.productionBible?.locationProfile?.trim();
+  if (location) sections.push(`[LOCATION WORLD]\n${location}`);
+
   const scene = (input.scenePrompt ?? "").trim();
   if (scene) sections.push(`[SCENE]\n${scene}`);
 
   const style = input.productionBible?.stylePrompt?.trim();
   if (style) sections.push(`[STYLE]\n${style}`);
+
+  const palette = input.productionBible?.colorPalette?.trim();
+  if (palette) sections.push(`[COLOR PALETTE]\n${palette}`);
+
+  const continuity = input.productionBible?.continuityPrompt?.trim();
+  if (continuity) sections.push(`[CONTINUITY]\n${continuity}`);
 
   return sections.join("\n\n");
 }

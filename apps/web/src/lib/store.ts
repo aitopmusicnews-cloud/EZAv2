@@ -1,9 +1,10 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { AudioAnalysis, AudioSection, Clip, ProductionBible, ReferenceAsset } from "@mvs/shared";
+import type { AudioAnalysis, AudioSection, Clip, DirectorPlan, DirectorShot, DirectorStage, ProductionBible, ReferenceAsset } from "@mvs/shared";
 import { AGNES_VIDEO_MODEL, ProjectSnapshot } from "@mvs/shared";
 import type { Job } from "./scheduler.js";
 import { getWs } from "./wavesurfer-ref.js";
+import { createDirectorPlan, directorScenePrompt, suggestProductionBible } from "./director.js";
 
 export const MAX_CLIP_LEN = 300;
 export const MIN_CLIP_LEN = 0.5;
@@ -90,6 +91,26 @@ function subdivideSection(section: AudioSection, beats: number[]): Clip[] {
   return clips;
 }
 
+function directorClips(plan: DirectorPlan, bible: ProductionBible | null): Clip[] {
+  const referenceAssetIds = Array.from(new Set([
+    ...(bible?.characterReferenceAssetIds ?? []),
+    ...(bible?.vehicleReferenceAssetIds ?? []),
+  ]));
+  return plan.shots.map((shot) => ({
+    id: shot.clipId,
+    start: shot.start,
+    end: shot.end,
+    source: "imageToVideo",
+    status: "empty",
+    prompt: `${directorScenePrompt(shot)} Animate the approved storyboard image with natural cinematic motion while preserving identity, wardrobe, environment, and composition.`,
+    imagePrompt: directorScenePrompt(shot),
+    model: AGNES_VIDEO_MODEL,
+    sectionLabel: shot.sectionLabel,
+    referenceAssetIds,
+    archetypeUrl: shot.imageUrl,
+  }));
+}
+
 type State = {
   projectId: string | null;
   projectName: string | null;
@@ -107,6 +128,10 @@ type State = {
   referenceAssets: ReferenceAsset[];
   zoom: number;
   jobs: Job[];
+  directorVision: string;
+  directorPlan: DirectorPlan | null;
+  directorStage: DirectorStage;
+  directorFinalUrl: string | null;
 
   setProjectName: (name: string) => void;
   loadSong: (songId: string, audioUrl: string, analysis: AudioAnalysis, filename: string | null) => void;
@@ -130,6 +155,17 @@ type State = {
   setProductionBible: (bible: ProductionBible | null) => void;
   upsertReferenceAsset: (asset: ReferenceAsset) => void;
   removeReferenceAsset: (id: string) => void;
+
+  setDirectorVision: (vision: string) => void;
+  buildDirectorPlan: () => DirectorPlan | null;
+  updateDirectorBible: (patch: Partial<ProductionBible>) => void;
+  updateDirectorShot: (id: string, patch: Partial<Pick<DirectorShot, "idea" | "camera" | "framing" | "mood" | "location" | "hero">>) => void;
+  approveDirectorPlan: () => void;
+  setDirectorShotImage: (id: string, patch: { status: DirectorShot["imageStatus"]; url?: string; error?: string }) => void;
+  approveDirectorImage: (id: string, approved?: boolean) => void;
+  approveDirectorClip: (id: string, approved?: boolean) => void;
+  setDirectorStage: (stage: DirectorStage) => void;
+  setDirectorFinalUrl: (url: string | null) => void;
 
   setZoom: (z: number) => void;
   zoomIn: () => void;
@@ -163,6 +199,10 @@ const emptyState = {
   referenceAssets: [],
   zoom: 1,
   jobs: [],
+  directorVision: "",
+  directorPlan: null,
+  directorStage: "song" as DirectorStage,
+  directorFinalUrl: null,
 };
 
 export const useStore = create<State>()(
@@ -186,6 +226,10 @@ export const useStore = create<State>()(
           lookbook: s.lookbook,
           productionBible: s.productionBible,
           referenceAssets: s.referenceAssets,
+          directorVision: s.directorVision,
+          directorPlan: s.directorPlan,
+          directorStage: s.directorStage,
+          directorFinalUrl: s.directorFinalUrl,
           zoom: s.zoom,
           playhead: s.playhead,
         };
@@ -229,6 +273,10 @@ export const useStore = create<State>()(
           lookbook: s.lookbook ?? [],
           productionBible: s.productionBible ?? null,
           referenceAssets: s.referenceAssets ?? [],
+          directorVision: s.directorVision ?? "",
+          directorPlan: s.directorPlan ?? null,
+          directorStage: s.directorStage ?? (s.directorPlan ? "plan" : "song"),
+          directorFinalUrl: s.directorFinalUrl ?? null,
           zoom: s.zoom ?? 1,
           playhead: s.playhead ?? 0,
           selectedClipId: null,
@@ -251,6 +299,9 @@ export const useStore = create<State>()(
           isPlaying: false,
           zoom: 1,
           jobs: [],
+          directorPlan: null,
+          directorStage: "song",
+          directorFinalUrl: null,
         });
       },
       unloadSong: () =>
@@ -264,6 +315,10 @@ export const useStore = create<State>()(
           playhead: 0,
           isPlaying: false,
           jobs: [],
+          directorVision: "",
+          directorPlan: null,
+          directorStage: "song",
+          directorFinalUrl: null,
         }),
       resetProject: () => set({ ...emptyState }),
       selectClip: (id) => set({ selectedClipId: id }),
@@ -317,6 +372,127 @@ export const useStore = create<State>()(
             referenceAssetIds: clip.referenceAssetIds?.filter((assetId) => assetId !== id),
           })),
         })),
+
+      setDirectorVision: (directorVision) => set({ directorVision }),
+      buildDirectorPlan: () => {
+        const { analysis, directorVision, productionBible } = get();
+        if (!analysis) return null;
+        const suggestedBible = suggestProductionBible(analysis, directorVision, productionBible ?? {});
+        const directorPlan = createDirectorPlan(analysis, directorVision, suggestedBible);
+        set({
+          productionBible: suggestedBible,
+          directorPlan,
+          directorStage: "plan",
+          directorFinalUrl: null,
+        });
+        return directorPlan;
+      },
+      updateDirectorBible: (patch) =>
+        set((state) => {
+          const productionBible = { ...(state.productionBible ?? {}), ...patch };
+          if (!state.directorPlan) return { productionBible };
+          const shots = state.directorPlan.shots.map((shot) => ({
+            ...shot,
+            imageStatus: "idle" as const,
+            imageUrl: undefined,
+            imageApproved: false,
+            imageError: undefined,
+            videoApproved: false,
+          }));
+          const directorPlan = { ...state.directorPlan, approvedAt: undefined, shots };
+          return {
+            productionBible,
+            directorPlan,
+            directorStage: "plan" as const,
+            directorFinalUrl: null,
+            clips: directorClips(directorPlan, productionBible),
+          };
+        }),
+      updateDirectorShot: (id, patch) =>
+        set((state) => {
+          if (!state.directorPlan) return state;
+          const shots = state.directorPlan.shots.map((shot) => shot.id === id
+            ? {
+                ...shot,
+                ...patch,
+                imageStatus: "idle" as const,
+                imageUrl: undefined,
+                imageApproved: false,
+                imageError: undefined,
+                videoApproved: false,
+              }
+            : shot);
+          const directorPlan = { ...state.directorPlan, approvedAt: undefined, shots };
+          return {
+            directorPlan,
+            directorStage: "plan" as const,
+            directorFinalUrl: null,
+            clips: directorClips(directorPlan, state.productionBible),
+          };
+        }),
+      approveDirectorPlan: () =>
+        set((state) => {
+          if (!state.directorPlan) return state;
+          if (!state.productionBible?.negativePrompt?.trim()) return state;
+          const directorPlan = { ...state.directorPlan, approvedAt: Date.now() };
+          return {
+            directorPlan,
+            directorStage: "images" as const,
+            clips: directorClips(directorPlan, state.productionBible),
+            directorFinalUrl: null,
+          };
+        }),
+      setDirectorShotImage: (id, patch) =>
+        set((state) => {
+          if (!state.directorPlan) return state;
+          const shots = state.directorPlan.shots.map((shot) => {
+            if (shot.id !== id) return shot;
+            const changedImage = Boolean(patch.url && patch.url !== shot.imageUrl);
+            return {
+              ...shot,
+              imageStatus: patch.status,
+              imageUrl: patch.url ?? shot.imageUrl,
+              imageError: patch.error,
+              imageApproved: changedImage ? false : shot.imageApproved,
+              videoApproved: changedImage ? false : shot.videoApproved,
+            };
+          });
+          const target = shots.find((shot) => shot.id === id);
+          return {
+            directorPlan: { ...state.directorPlan, shots },
+            clips: state.clips.map((clip) => target && clip.id === target.clipId
+              ? {
+                  ...clip,
+                  archetypeUrl: target.imageUrl,
+                  status: "empty" as const,
+                  videoUrl: undefined,
+                  thumbnailUrl: undefined,
+                  generationTaskId: undefined,
+                  lastError: undefined,
+                }
+              : clip),
+          };
+        }),
+      approveDirectorImage: (id, approved = true) =>
+        set((state) => state.directorPlan ? {
+          directorPlan: {
+            ...state.directorPlan,
+            shots: state.directorPlan.shots.map((shot) => shot.id === id ? { ...shot, imageApproved: approved && shot.imageStatus === "ready" && Boolean(shot.imageUrl) } : shot),
+          },
+        } : state),
+      approveDirectorClip: (id, approved = true) =>
+        set((state) => state.directorPlan ? {
+          directorPlan: {
+            ...state.directorPlan,
+            shots: state.directorPlan.shots.map((shot) => {
+              if (shot.id !== id) return shot;
+              const clip = state.clips.find((item) => item.id === shot.clipId);
+              return { ...shot, videoApproved: approved && clip?.status === "ready" && Boolean(clip.videoUrl) };
+            }),
+          },
+        } : state),
+      setDirectorStage: (directorStage) => set({ directorStage }),
+      setDirectorFinalUrl: (directorFinalUrl) => set({ directorFinalUrl }),
 
       setZoom: (z) => set({ zoom: clamp(z, ZOOM_MIN, ZOOM_MAX) }),
       zoomIn: () => set((s) => ({ zoom: clamp(s.zoom * ZOOM_STEP, ZOOM_MIN, ZOOM_MAX) })),
@@ -455,6 +631,10 @@ export const useStore = create<State>()(
           lookbook: s.lookbook,
           productionBible: s.productionBible,
           referenceAssets: s.referenceAssets,
+          directorVision: s.directorVision,
+          directorPlan: s.directorPlan,
+          directorStage: s.directorStage,
+          directorFinalUrl: s.directorFinalUrl,
           zoom: s.zoom,
           playhead: s.playhead,
         }) as Partial<State>,

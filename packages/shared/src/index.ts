@@ -34,6 +34,49 @@ export const AudioAnalysis = z.object({
 });
 export type AudioAnalysis = z.infer<typeof AudioAnalysis>;
 
+export const DirectorStage = z.enum(["song", "plan", "images", "clips", "final"]);
+export type DirectorStage = z.infer<typeof DirectorStage>;
+
+export const DirectorShot = z.object({
+  id: z.string().min(1),
+  clipId: z.string().min(1),
+  start: z.number().finite().min(0),
+  end: z.number().finite().positive(),
+  sectionLabel: z.string().min(1),
+  role: z.string().min(1),
+  idea: z.string().min(1),
+  camera: z.string().min(1),
+  framing: z.string().min(1),
+  mood: z.string().min(1),
+  location: z.string().min(1),
+  energy: z.number().finite().min(0).max(1),
+  hero: z.boolean().default(false),
+  imageStatus: z.enum(["idle", "generating", "ready", "failed"]).default("idle"),
+  imageUrl: z.string().optional(),
+  imageApproved: z.boolean().default(false),
+  imageError: z.string().optional(),
+  videoApproved: z.boolean().default(false),
+});
+export type DirectorShot = z.infer<typeof DirectorShot>;
+
+export const DirectorTreatment = z.object({
+  title: z.string().min(1),
+  concept: z.string().min(1),
+  style: z.string().min(1),
+  pacing: z.string().min(1),
+});
+export type DirectorTreatment = z.infer<typeof DirectorTreatment>;
+
+export const DirectorPlan = z.object({
+  id: z.string().min(1),
+  version: z.literal(1).default(1),
+  vision: z.string(),
+  treatment: DirectorTreatment,
+  shots: z.array(DirectorShot).min(1),
+  approvedAt: z.number().optional(),
+});
+export type DirectorPlan = z.infer<typeof DirectorPlan>;
+
 export const ReferenceRole = z.enum(["character", "vehicle", "wardrobe", "location", "style", "prop"]);
 export type ReferenceRole = z.infer<typeof ReferenceRole>;
 
@@ -88,8 +131,12 @@ export type SpatialLock = z.infer<typeof SpatialLock>;
 export const ProductionBible = z.object({
   id: z.string().optional(),
   characterProfile: z.string().optional(),
+  wardrobeProfile: z.string().optional(),
   vehicleProfile: z.string().optional(),
+  locationProfile: z.string().optional(),
   stylePrompt: z.string().optional(),
+  colorPalette: z.string().optional(),
+  continuityPrompt: z.string().optional(),
   negativePrompt: z.string().optional(),
   characterReferenceAssetIds: z.array(z.string()).optional(),
   vehicleReferenceAssetIds: z.array(z.string()).optional(),
@@ -145,6 +192,10 @@ export const ProjectSnapshot = z.object({
   characterImageUrl: z.string().optional(),
   productionBible: ProductionBible.optional(),
   referenceAssets: z.array(ReferenceAsset).optional(),
+  directorPlan: DirectorPlan.optional(),
+  directorStage: DirectorStage.optional(),
+  directorVision: z.string().optional(),
+  directorFinalUrl: z.string().optional(),
   // Kept only so historical snapshots containing these fields still parse.
   avatarId: z.string().optional(),
   avatarName: z.string().optional(),
