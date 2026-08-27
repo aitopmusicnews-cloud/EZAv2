@@ -1,84 +1,187 @@
-import { useMemo, useState, type ChangeEvent, type DragEvent } from "react";
-import { getErrorMessage, type DirectorShot, type ReferenceAsset } from "@mvs/shared";
-import { uploadSong } from "../lib/api.js";
-import { useStore } from "../lib/store.js";
-import { AssetUploader } from "./AssetUploader.js";
-import { compileDirectorImageRequest } from "../lib/directorPrompts.js";
+import { useState, type ChangeEvent, type DragEvent } from "react";
 import {
-  approveAllReadyDirectorClips,
-  approveAllStoryboardImages,
-  enqueueDirectorVideos,
-  generateStoryboardImage,
-  generateStoryboardImages,
-  regenerateDirectorVideo,
-  renderDirectorFinal,
-} from "../lib/directorActions.js";
+  getErrorMessage,
+  type AudioAnalysis,
+  type DirectorStage,
+  type LyricDocument,
+  type SongUnderstanding,
+} from "@mvs/shared";
+import { uploadSong } from "../lib/api.js";
+import {
+  alignOfficialLyricsApi,
+  requestSongUnderstanding,
+  transcribeSong,
+} from "../lib/directorPhaseAApi.js";
+import { useStore } from "../lib/store.js";
 import "../styles/director.css";
+import "../styles/directorPhaseA.css";
 
-const CAMERA_OPTIONS = [
-  "slow cinematic push-in",
-  "slow dolly forward",
-  "smooth lateral tracking",
-  "low-angle push-in",
-  "controlled handheld drift",
-  "gentle orbit around the subject",
-  "locked-off cinematic composition",
+const STEPS: Array<{ label: string; stage: DirectorStage }> = [
+  { label: "1. Song", stage: "song" },
+  { label: "2. Lyrics", stage: "lyrics" },
+  { label: "3. Understanding", stage: "understanding" },
+  { label: "4. Treatment", stage: "treatment" },
+  { label: "5. Plan", stage: "plan" },
+  { label: "6. Images", stage: "images" },
+  { label: "7. Takes", stage: "takes" },
+  { label: "8. Edit", stage: "edit" },
+  { label: "9. Final", stage: "final" },
 ];
-const FRAMING_OPTIONS = ["wide", "medium", "medium close-up", "close-up", "detail insert"];
-const STEP_LABELS = ["1. Song", "2. Plan", "3. Images", "4. Clips", "5. Final"] as const;
 
 export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => void }) {
+  const songId = useStore((s) => s.songId);
   const songFilename = useStore((s) => s.songFilename);
+  const audioUrl = useStore((s) => s.audioUrl);
   const analysis = useStore((s) => s.analysis);
   const directorVision = useStore((s) => s.directorVision);
-  const directorPlan = useStore((s) => s.directorPlan);
   const directorStage = useStore((s) => s.directorStage);
-  const directorFinalUrl = useStore((s) => s.directorFinalUrl);
-  const clips = useStore((s) => s.clips);
-  const bible = useStore((s) => s.productionBible) ?? {};
-  const referenceAssets = useStore((s) => s.referenceAssets);
-  const setDirectorVision = useStore((s) => s.setDirectorVision);
-  const buildDirectorPlan = useStore((s) => s.buildDirectorPlan);
-  const updateDirectorShot = useStore((s) => s.updateDirectorShot);
-  const approveDirectorPlan = useStore((s) => s.approveDirectorPlan);
-  const approveDirectorImage = useStore((s) => s.approveDirectorImage);
-  const approveDirectorClip = useStore((s) => s.approveDirectorClip);
-  const setDirectorStage = useStore((s) => s.setDirectorStage);
-  const unloadSong = useStore((s) => s.unloadSong);
-  const loadSong = useStore((s) => s.loadSong);
-  const setProductionBible = useStore((s) => s.setProductionBible);
-  const updateDirectorBible = useStore((s) => s.updateDirectorBible);
-  const upsertReferenceAsset = useStore((s) => s.upsertReferenceAsset);
+  const lyricDocument = useStore((s) => s.lyricDocument);
+  const songUnderstanding = useStore((s) => s.songUnderstanding);
 
-  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const loadSong = useStore((s) => s.loadSong);
+  const unloadSong = useStore((s) => s.unloadSong);
+  const setDirectorVision = useStore((s) => s.setDirectorVision);
+  const setDirectorStage = useStore((s) => s.setDirectorStage);
+  const setLyricDocument = useStore((s) => s.setLyricDocument);
+  const updateLyricSegment = useStore((s) => s.updateLyricSegment);
+  const approveLyrics = useStore((s) => s.approveLyrics);
+  const markInstrumental = useStore((s) => s.markInstrumental);
+  const setSongUnderstanding = useStore((s) => s.setSongUnderstanding);
+  const updateSongUnderstanding = useStore((s) => s.updateSongUnderstanding);
+  const approveSongUnderstanding = useStore((s) => s.approveSongUnderstanding);
+
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<string | null>(null);
-  const [referenceStatus, setReferenceStatus] = useState<string | null>(null);
+  const [officialLyrics, setOfficialLyrics] = useState("");
 
-  const clipMap = useMemo(() => new Map(clips.map((clip) => [clip.id, clip])), [clips]);
-  const imagesApproved = Boolean(directorPlan?.shots.every((shot) => shot.imageApproved && shot.imageUrl));
-  const videosApproved = Boolean(directorPlan?.shots.every((shot) => shot.videoApproved));
-  const allImagesReady = Boolean(directorPlan?.shots.every((shot) => shot.imageStatus === "ready" && shot.imageUrl));
-  const allVideosReady = Boolean(directorPlan?.shots.every((shot) => {
-    const clip = clipMap.get(shot.clipId);
-    return clip?.status === "ready" && Boolean(clip.videoUrl);
-  }));
+  const clearMessages = () => {
+    setError(null);
+    setStatus(null);
+  };
 
-  const clearError = () => setError(null);
+  const runTranscription = async (input: { songId: string; audioUrl: string; duration: number }) => {
+    setBusy("transcription");
+    setStatus("Transcribing vocals and aligning lyric timing…");
+    setError(null);
+    try {
+      const document = await transcribeSong(input);
+      setLyricDocument(document);
+      setStatus("Draft lyrics are ready. Verify every important line before approval.");
+    } catch (err) {
+      setStatus(null);
+      setError(`Automatic transcription unavailable: ${getErrorMessage(err)} Your song is still loaded. Retry transcription, paste official lyrics, or mark the track instrumental.`);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const handleSong = async (file: File) => {
-    clearError();
-    setUploadStatus("Uploading and analyzing your song…");
+    clearMessages();
+    setBusy("upload");
+    setStatus("Uploading and analyzing music structure…");
     try {
       const result = await uploadSong(file);
       loadSong(result.id, result.audioUrl, result.analysis, result.filename ?? file.name);
-      setUploadStatus(null);
+      setDirectorStage("lyrics");
+      setBusy(null);
+      await runTranscription({ songId: result.id, audioUrl: result.audioUrl, duration: result.analysis.duration });
     } catch (err) {
-      setUploadStatus(null);
+      setBusy(null);
+      setStatus(null);
       setError(`Song upload failed: ${getErrorMessage(err)}`);
     }
+  };
+
+  const retryTranscription = async () => {
+    if (!songId || !audioUrl || !analysis) return;
+    await runTranscription({ songId, audioUrl, duration: analysis.duration });
+  };
+
+  const alignOfficial = async () => {
+    const text = officialLyrics.trim();
+    if (!text) {
+      setError("Paste official lyrics before aligning them.");
+      return;
+    }
+    if (!lyricDocument?.words?.length) {
+      setLyricDocument({ source: "official", rawText: text, segments: [] });
+      setError("Official lyrics are saved, but timing is unresolved. Retry automatic transcription, then use Align Official Lyrics to map these words to the song.");
+      return;
+    }
+    setBusy("align");
+    clearMessages();
+    try {
+      const aligned = await alignOfficialLyricsApi({ draft: lyricDocument, officialText: text });
+      setLyricDocument(aligned);
+      setStatus("Official wording is aligned to the detected song timing. Review it before approval.");
+    } catch (err) {
+      setError(`Official lyric alignment failed: ${getErrorMessage(err)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const approveCurrentLyrics = () => {
+    clearMessages();
+    approveLyrics();
+    const approved = useStore.getState().lyricDocument?.approvedAt;
+    if (!approved) {
+      setError("Vocal lyrics need at least one timed, non-empty lyric segment before approval.");
+      return;
+    }
+    // Keep the user on Lyrics so the Analyze button remains an explicit action.
+    setDirectorStage("lyrics");
+    setStatus("Lyrics approved. BeatSync can now analyze meaning using the verified words plus the music structure.");
+  };
+
+  const markTrackInstrumental = () => {
+    clearMessages();
+    markInstrumental();
+    setDirectorStage("lyrics");
+    setStatus("Instrumental Mode approved explicitly. Song Understanding will use music structure plus your vision, without inventing lyrics.");
+  };
+
+  const analyzeMeaning = async () => {
+    const currentLyrics = useStore.getState().lyricDocument;
+    if (!analysis || !currentLyrics?.approvedAt) {
+      setError("Approve the lyrics or explicitly mark the song instrumental before Song Understanding.");
+      return;
+    }
+    setBusy("understanding");
+    clearMessages();
+    setStatus("Analyzing song meaning, emotional arc, key moments, motifs, and performance opportunities…");
+    try {
+      const understanding = await requestSongUnderstanding({
+        lyrics: currentLyrics,
+        analysis,
+        vision: directorVision,
+      });
+      setSongUnderstanding(understanding);
+      setDirectorStage("understanding");
+      setStatus("Song Understanding is ready. Edit anything that does not match the artist's intent before approval.");
+    } catch (err) {
+      setStatus(null);
+      setError(`Song Understanding failed: ${getErrorMessage(err)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const reanalyzeMeaning = () => void analyzeMeaning();
+
+  const canOpenStage = (stage: DirectorStage) => {
+    if (stage === "song") return true;
+    if (stage === "lyrics") return Boolean(analysis);
+    if (stage === "understanding") return Boolean(lyricDocument?.approvedAt);
+    return false;
+  };
+
+  const onPickSong = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) void handleSong(file);
+    event.target.value = "";
   };
 
   const onDropSong = (event: DragEvent<HTMLLabelElement>) => {
@@ -88,198 +191,97 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
     if (file) void handleSong(file);
   };
 
-  const onPickSong = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) void handleSong(file);
-    event.target.value = "";
-  };
-
-  const addReference = (role: ReferenceAsset["role"], url: string) => {
-    const asset: ReferenceAsset = {
-      id: `ref-${role}-${crypto.randomUUID().slice(0, 8)}`,
-      url,
-      role,
-      locked: true,
-      name: role === "character" ? "Director artist reference" : "Director style reference",
-    };
-    upsertReferenceAsset(asset);
-    if (role === "character") {
-      setProductionBible({ ...bible, characterReferenceAssetIds: [asset.id] });
-    }
-  };
-
-  const createPlan = () => {
-    clearError();
-    const plan = buildDirectorPlan();
-    if (!plan) setError("Upload a song before creating the video plan.");
-  };
-
-  const generateImages = async () => {
-    setBusy("images");
-    clearError();
-    try {
-      await generateStoryboardImages((done, total) => setProgress(total ? `Generating storyboard image ${done + 1} of ${total}…` : null));
-      setProgress(null);
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setBusy(null);
-      setProgress(null);
-    }
-  };
-
-  const regenerateImage = async (shotId: string) => {
-    setBusy(`image:${shotId}`);
-    clearError();
-    try {
-      await generateStoryboardImage(shotId);
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const generateVideos = () => {
-    clearError();
-    try {
-      enqueueDirectorVideos();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
-  };
-
-  const regenerateVideo = (shotId: string) => {
-    clearError();
-    try {
-      regenerateDirectorVideo(shotId);
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
-  };
-
-  const renderFinal = async () => {
-    setBusy("render");
-    clearError();
-    setProgress("Submitting final render…");
-    try {
-      await renderDirectorFinal((job) => {
-        if (job.state === "queued") setProgress("Final render queued…");
-        if (job.state === "running") setProgress("Rendering approved music video…");
-      });
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setBusy(null);
-      setProgress(null);
-    }
-  };
-
-  const canOpenStep = (index: number) => {
-    if (index === 0) return true;
-    if (index === 1) return Boolean(analysis && directorPlan);
-    if (index === 2) return Boolean(directorPlan?.approvedAt);
-    if (index === 3) return imagesApproved || directorStage === "clips" || directorStage === "final";
-    return Boolean(directorFinalUrl);
-  };
-
-  const stageForIndex = ["song", "plan", "images", "clips", "final"] as const;
+  const effectiveStage: DirectorStage = directorStage === "clips" ? "takes" : directorStage;
 
   return (
     <div className="director-app">
       <header className="director-header">
         <div>
           <div className="director-kicker">EZAv2 + BeatSync</div>
-          <h1>AI Music Video Director</h1>
+          <h1>Professional Music Video Director</h1>
         </div>
         <button type="button" className="btn ghost" onClick={onOpenAdvanced}>Advanced Editor</button>
       </header>
 
-      <nav className="director-stepper" aria-label="Music video creation steps">
-        {STEP_LABELS.map((label, index) => (
-          <button
-            type="button"
-            key={label}
-            disabled={!canOpenStep(index)}
-            className={directorStage === stageForIndex[index] ? "active" : ""}
-            onClick={() => setDirectorStage(stageForIndex[index]!)}
-          >
-            {label}
-          </button>
-        ))}
+      <nav className="director-stepper director-stepper-scroll" aria-label="Professional music video stages">
+        {STEPS.map(({ label, stage }) => {
+          const enabled = canOpenStage(stage);
+          return (
+            <button
+              type="button"
+              key={stage}
+              disabled={!enabled}
+              className={effectiveStage === stage ? "active" : ""}
+              onClick={() => enabled && setDirectorStage(stage)}
+            >
+              {label}
+            </button>
+          );
+        })}
       </nav>
 
-      {error && <div className="director-alert"><strong>Needs attention:</strong> {error}<button type="button" onClick={clearError}>×</button></div>}
-      {progress && <div className="director-progress">{progress}</div>}
+      {error && <div className="director-alert"><strong>Needs attention:</strong> {error}<button type="button" onClick={() => setError(null)}>×</button></div>}
+      {status && <div className="director-progress">{status}</div>}
 
       <main className="director-main">
-        {directorStage === "song" && (
+        {effectiveStage === "song" && (
           <SongStep
             songFilename={songFilename}
             analysis={analysis}
             vision={directorVision}
             setVision={setDirectorVision}
-            uploadStatus={uploadStatus}
             dragOver={dragOver}
             setDragOver={setDragOver}
+            busy={busy}
             onDrop={onDropSong}
             onPick={onPickSong}
-            onChangeSong={unloadSong}
-            onCreatePlan={createPlan}
-            bible={bible}
-            references={referenceAssets}
-            addReference={addReference}
-            referenceStatus={referenceStatus}
-            setReferenceStatus={setReferenceStatus}
+            onChangeSong={() => { unloadSong(); clearMessages(); setOfficialLyrics(""); }}
+            onContinue={() => setDirectorStage("lyrics")}
           />
         )}
 
-        {directorStage === "plan" && directorPlan && (
-          <PlanStep
-            plan={directorPlan}
-            bible={bible}
-            references={referenceAssets}
-            onUpdateBible={updateDirectorBible}
-            onUpdateShot={updateDirectorShot}
-            onRegeneratePlan={createPlan}
-            onApprove={() => approveDirectorPlan()}
+        {effectiveStage === "lyrics" && analysis && (
+          <LyricsStep
+            document={lyricDocument}
+            officialLyrics={officialLyrics}
+            setOfficialLyrics={setOfficialLyrics}
+            busy={busy}
+            onRetry={() => void retryTranscription()}
+            onUpdateSegment={updateLyricSegment}
+            onAlign={() => void alignOfficial()}
+            onApprove={approveCurrentLyrics}
+            onInstrumental={markTrackInstrumental}
+            onAnalyze={() => void analyzeMeaning()}
             onBack={() => setDirectorStage("song")}
           />
         )}
 
-        {directorStage === "images" && directorPlan && (
-          <ImagesStep
-            plan={directorPlan}
+        {effectiveStage === "understanding" && lyricDocument?.approvedAt && (
+          <UnderstandingStep
+            understanding={songUnderstanding}
             busy={busy}
-            onGenerate={generateImages}
-            onRegenerate={regenerateImage}
-            onApprove={(id: string, approved: boolean) => approveDirectorImage(id, approved)}
-            onApproveAll={approveAllStoryboardImages}
-            onEditPlan={() => setDirectorStage("plan")}
-            onGenerateVideos={generateVideos}
-            allReady={allImagesReady}
-            allApproved={imagesApproved}
+            onUpdate={updateSongUnderstanding}
+            onReanalyze={reanalyzeMeaning}
+            onApprove={() => approveSongUnderstanding()}
+            onBack={() => setDirectorStage("lyrics")}
+            onAnalyze={() => void analyzeMeaning()}
           />
         )}
 
-        {directorStage === "clips" && directorPlan && (
-          <ClipsStep
-            plan={directorPlan}
-            clipMap={clipMap}
-            onApprove={(id: string, approved: boolean) => approveDirectorClip(id, approved)}
-            onApproveAll={approveAllReadyDirectorClips}
-            onRegenerate={regenerateVideo}
-            onBack={() => setDirectorStage("images")}
-            onGenerateMissing={generateVideos}
-            onRender={() => void renderFinal()}
-            allReady={allVideosReady}
-            allApproved={videosApproved}
-            rendering={busy === "render"}
+        {effectiveStage === "treatment" && (
+          <LockedFutureStep
+            title="Song Understanding approved"
+            message="Professional Treatment is the next implementation phase. The old BPM/energy heuristic planner is disabled, so BeatSync will not generate a fake treatment while the professional treatment engine is being built."
+            onBack={() => setDirectorStage("understanding")}
           />
         )}
 
-        {directorStage === "final" && (
-          <FinalStep finalUrl={directorFinalUrl} onBack={() => setDirectorStage("clips")} onAdvanced={onOpenAdvanced} />
+        {!["song", "lyrics", "understanding", "treatment"].includes(effectiveStage) && (
+          <LockedFutureStep
+            title="Legacy Director stage locked"
+            message="This saved project reached a pre-professional Director stage. Professional generation now requires verified Lyrics → Song Understanding → Treatment. Open the Advanced Editor for manual work, or return to Lyrics to upgrade the Director foundation."
+            onBack={() => setDirectorStage(lyricDocument?.approvedAt ? "understanding" : analysis ? "lyrics" : "song")}
+          />
         )}
       </main>
     </div>
@@ -287,22 +289,46 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
 }
 
 function SongStep({
-  songFilename, analysis, vision, setVision, uploadStatus, dragOver, setDragOver, onDrop, onPick, onChangeSong, onCreatePlan,
-  bible, references, addReference, referenceStatus, setReferenceStatus,
-}: any) {
-  const character = references.find((asset: ReferenceAsset) => bible.characterReferenceAssetIds?.includes(asset.id));
-  const styleRefs = references.filter((asset: ReferenceAsset) => asset.role === "style" && asset.locked);
+  songFilename,
+  analysis,
+  vision,
+  setVision,
+  dragOver,
+  setDragOver,
+  busy,
+  onDrop,
+  onPick,
+  onChangeSong,
+  onContinue,
+}: {
+  songFilename: string | null;
+  analysis: AudioAnalysis | null;
+  vision: string;
+  setVision: (value: string) => void;
+  dragOver: boolean;
+  setDragOver: (value: boolean) => void;
+  busy: string | null;
+  onDrop: (event: DragEvent<HTMLLabelElement>) => void;
+  onPick: (event: ChangeEvent<HTMLInputElement>) => void;
+  onChangeSong: () => void;
+  onContinue: () => void;
+}) {
   return (
     <section className="director-panel director-song-step">
       <div className="director-section-heading">
         <span className="director-step-number">1</span>
-        <div><h2>Start with your song</h2><p>BeatSync handles the directing and prompt writing. Your vision is optional.</p></div>
+        <div><h2>Start with the real song</h2><p>BeatSync analyzes music structure first, then verifies lyrics before it is allowed to interpret the song.</p></div>
       </div>
 
       {!analysis ? (
-        <label className={`director-song-drop${dragOver ? " over" : ""}`} onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
+        <label
+          className={`director-song-drop${dragOver ? " over" : ""}`}
+          onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+        >
           <input type="file" accept="audio/*" hidden onChange={onPick} />
-          <strong>{uploadStatus ?? "Upload MP3 / WAV"}</strong>
+          <strong>{busy === "upload" ? "Uploading and analyzing…" : "Upload MP3 / WAV"}</strong>
           <span>Drop a song here or click to choose</span>
         </label>
       ) : (
@@ -313,179 +339,244 @@ function SongStep({
       )}
 
       <label className="director-field">
-        <span>Vision <em>optional</em></span>
-        <textarea value={vision} onChange={(e) => setVision(e.target.value)} placeholder="Example: Luxury nighttime performance video with exotic cars, neon city light, confident fashion energy." />
-        <small>Write one simple idea. BeatSync expands it into the treatment, shots, camera directions, and Agnes prompts.</small>
+        <span>Artist / Director Vision <em>optional</em></span>
+        <textarea
+          value={vision}
+          onChange={(event) => setVision(event.target.value)}
+          placeholder="Example: glamorous but emotionally isolated, mostly performance with a small narrative thread, no cars."
+        />
+        <small>This helps interpretation, but BeatSync must still ground lyrical claims in approved lyrics.</small>
       </label>
 
-      <details className="director-details">
-        <summary>Artist & style references <span>optional</span></summary>
-        <div className="director-reference-grid">
-          <AssetUploader className="director-reference-upload" onUploaded={(url) => addReference("character", url)} onStatus={setReferenceStatus}>
-            {character?.url ? <img src={character.url} alt="Artist reference" /> : <div><strong>+ Artist Reference</strong><span>Keep the main artist consistent</span></div>}
-          </AssetUploader>
-          <AssetUploader className="director-reference-upload" onUploaded={(url) => addReference("style", url)} onStatus={setReferenceStatus}>
-            {styleRefs[0]?.url ? <img src={styleRefs[0].url} alt="Style reference" /> : <div><strong>+ Style Reference</strong><span>Optional look / lighting reference</span></div>}
-          </AssetUploader>
-        </div>
-        {referenceStatus && <small>{referenceStatus}</small>}
-      </details>
-
-      <button type="button" className="director-primary" disabled={!analysis} onClick={onCreatePlan}>Create Video Plan</button>
+      {analysis && <button type="button" className="director-primary" onClick={onContinue}>Continue to Lyrics</button>}
     </section>
   );
 }
 
-function PlanStep({ plan, bible, references, onUpdateBible, onUpdateShot, onRegeneratePlan, onApprove, onBack }: any) {
+function LyricsStep({
+  document,
+  officialLyrics,
+  setOfficialLyrics,
+  busy,
+  onRetry,
+  onUpdateSegment,
+  onAlign,
+  onApprove,
+  onInstrumental,
+  onAnalyze,
+  onBack,
+}: {
+  document: LyricDocument | null;
+  officialLyrics: string;
+  setOfficialLyrics: (value: string) => void;
+  busy: string | null;
+  onRetry: () => void;
+  onUpdateSegment: (id: string, text: string) => void;
+  onAlign: () => void;
+  onApprove: () => void;
+  onInstrumental: () => void;
+  onAnalyze: () => void;
+  onBack: () => void;
+}) {
+  const isInstrumental = document?.source === "instrumental";
+  const timed = Boolean(document?.segments.length);
+  const approved = Boolean(document?.approvedAt);
+
   return (
     <section className="director-panel">
       <div className="director-section-heading">
         <span className="director-step-number">2</span>
-        <div><h2>Review the plan before Agnes generates anything</h2><p>Change the idea, camera, framing, location, or hero shots in plain English.</p></div>
-      </div>
-      <div className="director-bible">
-        <div className="director-subheading">
-          <div><h3>Production Bible</h3><p>BeatSync suggested these project rules. Edit anything before approving. Nothing here is a fixed preset.</p></div>
-          <span className="director-auto-badge">Project-specific</span>
-        </div>
-        <div className="director-control-grid director-bible-grid">
-          <label><span>Artist</span><textarea value={bible.characterProfile ?? ""} onChange={(e) => onUpdateBible({ characterProfile: e.target.value || undefined })} placeholder="Optional — describe the recurring artist only if this project needs one." /></label>
-          <label><span>Wardrobe</span><textarea value={bible.wardrobeProfile ?? ""} onChange={(e) => onUpdateBible({ wardrobeProfile: e.target.value || undefined })} placeholder="Wardrobe identity and when it may change." /></label>
-          <label><span>Vehicle</span><textarea value={bible.vehicleProfile ?? ""} onChange={(e) => onUpdateBible({ vehicleProfile: e.target.value || undefined })} placeholder="Optional — leave blank when the video has no recurring vehicle." /></label>
-          <label><span>Location</span><textarea value={bible.locationProfile ?? ""} onChange={(e) => onUpdateBible({ locationProfile: e.target.value || undefined })} placeholder="Locations, environment, time of day, and geography." /></label>
-          <label><span>Visual Style</span><textarea value={bible.stylePrompt ?? ""} onChange={(e) => onUpdateBible({ stylePrompt: e.target.value || undefined })} /></label>
-          <label><span>Color Palette</span><textarea value={bible.colorPalette ?? ""} onChange={(e) => onUpdateBible({ colorPalette: e.target.value || undefined })} /></label>
-          <label className="director-wide-field"><span>Continuity</span><textarea value={bible.continuityPrompt ?? ""} onChange={(e) => onUpdateBible({ continuityPrompt: e.target.value || undefined })} /></label>
-          <label className="director-wide-field"><span>Global Negative Prompt</span><textarea value={bible.negativePrompt ?? ""} onChange={(e) => onUpdateBible({ negativePrompt: e.target.value || undefined })} placeholder="Required — things Agnes must avoid across every image and video in this project." /><small>Applied to every Agnes generation, then merged with shot-specific and spatial negatives without duplicates.</small></label>
-        </div>
-        <div className="director-spatial-summary">
-          <div><span>Spatial Rules</span><strong>{bible.defaultSpatialLock ? "Custom project lock" : "Auto / None"}</strong></div>
-          <small>No vehicle, seat, traffic, or camera geometry is forced by default. Add a spatial lock only when a specific scene needs one; detailed locks remain in Advanced Editor.</small>
-        </div>
-        <div className="director-reference-summary">
-          <span>{references.filter((asset: ReferenceAsset) => asset.locked).length} locked reference(s)</span>
-          <small>Artist, wardrobe, vehicle, location, and style references are used only when you add or lock them.</small>
-        </div>
+        <div><h2>Verify the lyrics</h2><p>Automatic transcription is a draft. Correct important words before BeatSync is allowed to interpret meaning.</p></div>
       </div>
 
-      <div className="director-treatment">
-        <h3>{plan.treatment.title}</h3>
-        <p>{plan.treatment.concept}</p>
-        <div><span>Style</span><strong>{plan.treatment.style}</strong></div>
-        <div><span>Pacing</span><strong>{plan.treatment.pacing}</strong></div>
+      <div className="director-action-row">
+        <button type="button" className="btn ghost" disabled={busy === "transcription"} onClick={onRetry}>Retry Transcription</button>
+        <button type="button" className="btn ghost" onClick={onInstrumental}>Mark as instrumental</button>
+        <button type="button" className="btn ghost" onClick={onBack}>Back to Song</button>
       </div>
-      <div className="director-shot-list">
-        {plan.shots.map((shot: DirectorShot, index: number) => {
-          const rawPrompt = compileDirectorImageRequest(shot, bible, references).promptText;
-          return (
-            <article className={`director-shot-card${shot.hero ? " hero" : ""}`} key={shot.id}>
-              <div className="director-shot-head">
-                <div><span className="mono">SHOT {String(index + 1).padStart(2, "0")}</span><strong>{shot.role}</strong></div>
-                <div className="director-shot-meta">{formatRange(shot.start, shot.end)} · {shot.sectionLabel}{shot.hero ? " · ★ HERO" : ""}</div>
-              </div>
-              <label className="director-field compact"><span>Idea</span><textarea value={shot.idea} onChange={(e) => onUpdateShot(shot.id, { idea: e.target.value })} /></label>
-              <div className="director-control-grid">
-                <label><span>Camera</span><select value={shot.camera} onChange={(e) => onUpdateShot(shot.id, { camera: e.target.value })}>{CAMERA_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select></label>
-                <label><span>Framing</span><select value={shot.framing} onChange={(e) => onUpdateShot(shot.id, { framing: e.target.value })}>{FRAMING_OPTIONS.map((item) => <option key={item}>{item}</option>)}</select></label>
-                <label><span>Mood</span><input value={shot.mood} onChange={(e) => onUpdateShot(shot.id, { mood: e.target.value })} /></label>
-                <label><span>Location / world</span><input value={shot.location} onChange={(e) => onUpdateShot(shot.id, { location: e.target.value })} /></label>
-              </div>
-              <label className="director-hero-toggle"><input type="checkbox" checked={shot.hero} onChange={(e) => onUpdateShot(shot.id, { hero: e.target.checked })} /> Hero shot</label>
-              <details className="director-advanced-prompt"><summary>Advanced · Raw Agnes Prompt</summary><pre>{rawPrompt}</pre></details>
-            </article>
-          );
-        })}
-      </div>
-      <div className="director-actions">
-        <button type="button" className="btn ghost" onClick={onBack}>Back</button>
-        <button type="button" className="btn" onClick={onRegeneratePlan}>Regenerate Plan</button>
-        <button type="button" className="director-primary" disabled={!bible.negativePrompt?.trim()} onClick={onApprove}>Approve Production Bible + Plan</button>
+
+      {isInstrumental ? (
+        <div className="director-stage-card director-stage-approved">
+          <strong>Instrumental Mode</strong>
+          <p>No lyric story will be invented. BeatSync will use music structure and your Director Vision only.</p>
+        </div>
+      ) : timed ? (
+        <div className="director-lyrics-grid">
+          {document!.segments.map((segment) => (
+            <label className="director-lyric-row" key={segment.id}>
+              <span>{formatTime(segment.start)}–{formatTime(segment.end)}</span>
+              <textarea value={segment.text} onChange={(event) => onUpdateSegment(segment.id, event.target.value)} />
+              <small>{segment.source === "official-aligned" ? "official aligned" : segment.source}</small>
+            </label>
+          ))}
+        </div>
+      ) : (
+        <div className="director-stage-card director-stage-locked">
+          <strong>No timed vocal draft yet</strong>
+          <p>You can paste official lyrics now, but professional lyric approval still requires timing from transcription. BeatSync will not fabricate timestamps.</p>
+        </div>
+      )}
+
+      {!isInstrumental && (
+        <div className="director-official-lyrics">
+          <label className="director-field">
+            <span>Paste official lyrics</span>
+            <textarea
+              value={officialLyrics}
+              onChange={(event) => setOfficialLyrics(event.target.value)}
+              placeholder="Paste the artist-approved lyrics here. Line breaks are preserved during alignment."
+            />
+          </label>
+          <button type="button" className="btn ghost" disabled={busy === "align"} onClick={onAlign}>Align Official Lyrics</button>
+        </div>
+      )}
+
+      <div className="director-approval-bar">
+        <div>
+          <strong>{approved ? "Lyrics approved" : "Approval required"}</strong>
+          <span>{approved ? "Any lyric edit will revoke approval and invalidate Song Understanding." : "BeatSync cannot analyze vocal meaning until you approve the words."}</span>
+        </div>
+        {!isInstrumental && <button type="button" className="btn" onClick={onApprove}>Approve Lyrics</button>}
+        <button type="button" className="director-primary" disabled={!approved || busy === "understanding"} onClick={onAnalyze}>Analyze Song Meaning</button>
       </div>
     </section>
   );
 }
 
-function ImagesStep({ plan, busy, onGenerate, onRegenerate, onApprove, onApproveAll, onEditPlan, onGenerateVideos, allReady, allApproved }: any) {
-  const readyCount = plan.shots.filter((shot: DirectorShot) => shot.imageStatus === "ready" && shot.imageUrl).length;
-  const approvedCount = plan.shots.filter((shot: DirectorShot) => shot.imageApproved).length;
+function UnderstandingStep({
+  understanding,
+  busy,
+  onUpdate,
+  onReanalyze,
+  onApprove,
+  onBack,
+  onAnalyze,
+}: {
+  understanding: SongUnderstanding | null;
+  busy: string | null;
+  onUpdate: (patch: Partial<SongUnderstanding>) => void;
+  onReanalyze: () => void;
+  onApprove: () => void;
+  onBack: () => void;
+  onAnalyze: () => void;
+}) {
+  if (!understanding) {
+    return (
+      <section className="director-panel">
+        <div className="director-section-heading">
+          <span className="director-step-number">3</span>
+          <div><h2>Song Understanding</h2><p>Lyrics are approved. BeatSync is ready to analyze meaning without guessing from BPM alone.</p></div>
+        </div>
+        <button type="button" className="director-primary" disabled={busy === "understanding"} onClick={onAnalyze}>Analyze Song Meaning</button>
+        <button type="button" className="btn ghost" onClick={onBack}>Back to Lyrics</button>
+      </section>
+    );
+  }
+
+  const updateList = (key: keyof SongUnderstanding, value: string) => {
+    onUpdate({ [key]: value.split("\n").map((item) => item.trim()).filter(Boolean) } as Partial<SongUnderstanding>);
+  };
+
+  const updateMoment = (index: number, patch: Partial<SongUnderstanding["keyLyricMoments"][number]>) => {
+    onUpdate({ keyLyricMoments: understanding.keyLyricMoments.map((moment, i) => i === index ? { ...moment, ...patch } : moment) });
+  };
+
+  const updateSection = (index: number, patch: Partial<SongUnderstanding["sections"][number]>) => {
+    onUpdate({ sections: understanding.sections.map((section, i) => i === index ? { ...section, ...patch } : section) });
+  };
+
   return (
     <section className="director-panel">
-      <div className="director-section-heading"><span className="director-step-number">3</span><div><h2>Approve storyboard images</h2><p>See the visual direction before spending video-generation credits.</p></div></div>
-      <div className="director-status-line"><span>{readyCount}/{plan.shots.length} images ready</span><span>{approvedCount}/{plan.shots.length} approved</span></div>
-      {!allReady && <button type="button" className="director-primary" disabled={busy === "images"} onClick={() => void onGenerate()}>{busy === "images" ? "Generating Images…" : "Generate Storyboard Images"}</button>}
-      <div className="director-storyboard-grid">
-        {plan.shots.map((shot: DirectorShot, index: number) => (
-          <article className={`director-image-card${shot.imageApproved ? " approved" : ""}`} key={shot.id}>
-            <div className="director-image-frame">
-              {shot.imageUrl ? <img src={shot.imageUrl} alt={`Storyboard shot ${index + 1}`} /> : <div className="director-image-placeholder">{shot.imageStatus === "generating" ? "Generating…" : "No image yet"}</div>}
-              {shot.hero && <span className="director-badge">★ HERO</span>}
-            </div>
-            <div className="director-card-body"><strong>{index + 1}. {shot.role}</strong><p>{shot.idea}</p><small>{formatRange(shot.start, shot.end)} · {shot.sectionLabel}</small></div>
-            {shot.imageError && <div className="director-card-error">{shot.imageError}</div>}
-            <div className="director-card-actions">
-              <button type="button" className="btn" disabled={!shot.imageUrl} onClick={() => onApprove(shot.id, !shot.imageApproved)}>{shot.imageApproved ? "✓ Image Approved" : "Approve Image"}</button>
-              <button type="button" className="btn ghost" disabled={busy === `image:${shot.id}`} onClick={() => void onRegenerate(shot.id)}>Regenerate Image</button>
-            </div>
-          </article>
-        ))}
+      <div className="director-section-heading">
+        <span className="director-step-number">3</span>
+        <div><h2>Review Song Understanding</h2><p>This becomes the semantic foundation for the professional treatment. Fix anything that does not match the artist's intent.</p></div>
       </div>
-      <div className="director-actions sticky">
-        <button type="button" className="btn ghost" onClick={onEditPlan}>Edit Plan</button>
-        <button type="button" className="btn" disabled={!allReady} onClick={onApproveAll}>Approve All Images</button>
-        <button type="button" className="director-primary" disabled={!allApproved} onClick={onGenerateVideos}>Generate Video Clips</button>
+
+      <div className="director-understanding-grid">
+        <label className="director-field">
+          <span>Theme</span>
+          <textarea value={understanding.primaryTheme} onChange={(event) => onUpdate({ primaryTheme: event.target.value })} />
+        </label>
+
+        <label className="director-field">
+          <span>Emotional Arc</span>
+          <textarea value={understanding.emotionalArc.join("\n")} onChange={(event) => updateList("emotionalArc", event.target.value)} />
+        </label>
+
+        <div className="director-understanding-block">
+          <h3>Key Lyrics</h3>
+          {understanding.keyLyricMoments.length ? understanding.keyLyricMoments.map((moment, index) => (
+            <div className="director-key-moment" key={`${moment.start}-${index}`}>
+              <strong>{formatTime(moment.start)} — “{moment.lyric}”</strong>
+              <label><span>Meaning</span><textarea value={moment.meaning} onChange={(event) => updateMoment(index, { meaning: event.target.value })} /></label>
+              <label><span>Visual opportunity</span><textarea value={moment.visualOpportunity} onChange={(event) => updateMoment(index, { visualOpportunity: event.target.value })} /></label>
+              <span className="director-confidence">Confidence: {moment.confidence}</span>
+            </div>
+          )) : <p>No lyric-specific moments were claimed for this track.</p>}
+        </div>
+
+        <div className="director-understanding-block">
+          <h3>Section Map</h3>
+          {understanding.sections.map((section, index) => (
+            <div className="director-section-map-row" key={`${section.start}-${index}`}>
+              <strong>{formatTime(section.start)}–{formatTime(section.end)} · {section.sourceLabel}</strong>
+              <input value={section.inferredRole} onChange={(event) => updateSection(index, { inferredRole: event.target.value })} />
+              <textarea value={section.lyricalPurpose} onChange={(event) => updateSection(index, { lyricalPurpose: event.target.value })} />
+              <textarea value={section.musicalPurpose} onChange={(event) => updateSection(index, { musicalPurpose: event.target.value })} />
+              <span className="director-confidence">Confidence: {section.confidence}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="director-understanding-block">
+          <h3>Narrative</h3>
+          <label><span>Perspective</span><textarea value={understanding.narrativePerspective} onChange={(event) => onUpdate({ narrativePerspective: event.target.value })} /></label>
+          <label><span>Characters / subjects</span><textarea value={understanding.characters.join("\n")} onChange={(event) => updateList("characters", event.target.value)} /></label>
+          <label><span>Secondary themes</span><textarea value={understanding.secondaryThemes.join("\n")} onChange={(event) => updateList("secondaryThemes", event.target.value)} /></label>
+        </div>
+
+        <label className="director-field">
+          <span>Visual Motifs</span>
+          <textarea value={understanding.visualMotifs.join("\n")} onChange={(event) => updateList("visualMotifs", event.target.value)} />
+        </label>
+
+        <label className="director-field">
+          <span>Performance Moments</span>
+          <textarea value={understanding.performanceOpportunities.join("\n")} onChange={(event) => updateList("performanceOpportunities", event.target.value)} />
+        </label>
+
+        <label className="director-field director-uncertainties">
+          <span>Uncertainties</span>
+          <textarea value={understanding.uncertaintyNotes.join("\n")} onChange={(event) => updateList("uncertaintyNotes", event.target.value)} />
+          <small>Uncertainty is useful. BeatSync should expose ambiguity instead of pretending confidence.</small>
+        </label>
+      </div>
+
+      <div className="director-approval-bar">
+        <button type="button" className="btn ghost" onClick={onBack}>Back to Lyrics</button>
+        <button type="button" className="btn ghost" disabled={busy === "understanding"} onClick={onReanalyze}>Re-analyze</button>
+        <button type="button" className="director-primary" onClick={onApprove}>Approve Song Understanding</button>
       </div>
     </section>
   );
 }
 
-function ClipsStep({ plan, clipMap, onApprove, onApproveAll, onRegenerate, onBack, onGenerateMissing, onRender, allReady, allApproved, rendering }: any) {
-  const approvedCount = plan.shots.filter((shot: DirectorShot) => shot.videoApproved).length;
+function LockedFutureStep({ title, message, onBack }: { title: string; message: string; onBack: () => void }) {
   return (
     <section className="director-panel">
-      <div className="director-section-heading"><span className="director-step-number">4</span><div><h2>Approve generated clips</h2><p>Regenerate only the shots that need work. Approved clips stay untouched.</p></div></div>
-      <div className="director-status-line"><span>{approvedCount}/{plan.shots.length} clips approved</span><span>{allReady ? "All clips ready" : "Generation still in progress"}</span></div>
-      <div className="director-clip-list">
-        {plan.shots.map((shot: DirectorShot, index: number) => {
-          const clip = clipMap.get(shot.clipId);
-          return (
-            <article className={`director-clip-card${shot.videoApproved ? " approved" : ""}`} key={shot.id}>
-              <div className="director-clip-preview">{clip?.videoUrl ? <video src={clip.videoUrl} controls preload="metadata" /> : <div>{clip?.status === "generating" || clip?.status === "queued" ? "Agnes is generating this clip…" : clip?.status === "failed" ? "Generation failed" : "Waiting to generate"}</div>}</div>
-              <div className="director-card-body"><strong>{index + 1}. {shot.role}</strong><p>{shot.idea}</p><small>{clip?.status ?? "empty"}{clip?.lastError ? ` · ${clip.lastError}` : ""}</small></div>
-              <div className="director-card-actions">
-                <button type="button" className="btn" disabled={clip?.status !== "ready" || !clip.videoUrl} onClick={() => onApprove(shot.id, !shot.videoApproved)}>{shot.videoApproved ? "✓ Clip Approved" : "Approve Clip"}</button>
-                <button type="button" className="btn ghost" disabled={clip?.status === "queued" || clip?.status === "generating"} onClick={() => onRegenerate(shot.id)}>Regenerate Clip</button>
-              </div>
-            </article>
-          );
-        })}
+      <div className="director-stage-card director-stage-approved">
+        <strong>{title}</strong>
+        <p>{message}</p>
       </div>
-      <div className="director-actions sticky">
-        <button type="button" className="btn ghost" onClick={onBack}>Back to Images</button>
-        {!allReady && <button type="button" className="btn" onClick={onGenerateMissing}>Generate Missing Clips</button>}
-        <button type="button" className="btn" disabled={!allReady} onClick={onApproveAll}>Approve All Ready Clips</button>
-        <button type="button" className="director-primary" disabled={!allApproved || rendering} onClick={onRender}>{rendering ? "Rendering…" : "Render Final Music Video"}</button>
-      </div>
+      <button type="button" className="btn ghost" onClick={onBack}>Review approved foundation</button>
     </section>
   );
 }
 
-function FinalStep({ finalUrl, onBack, onAdvanced }: { finalUrl: string | null; onBack: () => void; onAdvanced: () => void }) {
-  return (
-    <section className="director-panel director-final">
-      <div className="director-section-heading"><span className="director-step-number">5</span><div><h2>Your music video</h2><p>The final cut uses only the clips you approved and the original uploaded song.</p></div></div>
-      {finalUrl ? <video className="director-final-video" src={finalUrl} controls /> : <div className="director-image-placeholder">No final render yet.</div>}
-      <div className="director-actions">
-        <button type="button" className="btn ghost" onClick={onBack}>Make Changes</button>
-        <button type="button" className="btn" onClick={onAdvanced}>Open Advanced Editor</button>
-        {finalUrl && <a className="director-primary link" href={finalUrl} download>Download Final Video</a>}
-      </div>
-    </section>
-  );
+function formatTime(seconds: number): string {
+  if (!Number.isFinite(seconds)) return "0:00";
+  const safe = Math.max(0, Math.floor(seconds));
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
 }
-
-function formatTime(seconds: number) {
-  const minutes = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60).toString().padStart(2, "0");
-  return `${minutes}:${secs}`;
-}
-function formatRange(start: number, end: number) { return `${formatTime(start)}–${formatTime(end)}`; }
