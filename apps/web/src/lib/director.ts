@@ -197,7 +197,6 @@ export function createDirectorPlan(
       const end = bounds[i + 1]!;
       if (end <= start) continue;
       const energy = averageEnergy(analysis, start, end);
-      const sectionEnergy = sectionEnergies[sectionIndex] ?? energy;
       const role = roleFor(section.label, i, globalIndex === 0, {
         sectionIndex,
         sectionCount: sections.length,
@@ -253,6 +252,7 @@ export function createDirectorPlan(
   return {
     id: id("director-plan"),
     version: 1,
+    planningBasis: "legacy-audio-heuristic",
     vision: vision.trim(),
     treatment: {
       title: "BeatSync Director Treatment",
