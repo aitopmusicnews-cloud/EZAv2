@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const source = readFileSync(fileURLToPath(new URL("./DirectorWorkspace.tsx", import.meta.url)), "utf8");
+const source = readFileSync(resolve(process.cwd(), "apps/web/src/components/DirectorWorkspace.tsx"), "utf8");
 
 describe("Professional Director Phase A UI contract", () => {
   it("shows lyrics and Song Understanding before any professional treatment", () => {
