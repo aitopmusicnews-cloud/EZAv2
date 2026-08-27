@@ -261,28 +261,34 @@ export const Clip = z.object({
 });
 export type Clip = z.infer<typeof Clip>;
 
+// Project snapshots deliberately accept historical source/model strings so old
+// saved projects can still be opened. The store normalizes those values to the
+// active Agnes-only source model before putting them into runtime state.
 const SnapshotClip = Clip.extend({
   source: z.string(),
   model: z.string().optional(),
 }).passthrough();
 
 export const ProjectSnapshot = z.object({
-  projectId: z.string().optional(),
-  projectName: z.string().optional(),
-  songId: z.string().optional(),
-  songFilename: z.string().optional(),
-  audioUrl: z.string().optional(),
-  analysis: AudioAnalysis.optional(),
+  // Runtime/persisted Zustand state uses null for "not set yet". Accept null
+  // as well as omission so saved projects round-trip through this validator.
+  projectId: z.string().nullish(),
+  projectName: z.string().nullish(),
+  songId: z.string().nullish(),
+  songFilename: z.string().nullish(),
+  audioUrl: z.string().nullish(),
+  analysis: AudioAnalysis.nullish(),
   clips: z.array(SnapshotClip).optional(),
-  characterImageUrl: z.string().optional(),
-  productionBible: ProductionBible.optional(),
+  characterImageUrl: z.string().nullish(),
+  productionBible: ProductionBible.nullish(),
   referenceAssets: z.array(ReferenceAsset).optional(),
-  lyricDocument: LyricDocument.optional(),
-  songUnderstanding: SongUnderstanding.optional(),
-  directorPlan: DirectorPlan.optional(),
+  lyricDocument: LyricDocument.nullish(),
+  songUnderstanding: SongUnderstanding.nullish(),
+  directorPlan: DirectorPlan.nullish(),
   directorStage: DirectorStage.optional(),
   directorVision: z.string().optional(),
-  directorFinalUrl: z.string().optional(),
+  directorFinalUrl: z.string().nullish(),
+  // Kept only so historical snapshots containing these fields still parse.
   avatarId: z.string().optional(),
   avatarName: z.string().optional(),
   lookbook: z.array(z.any()).optional(),
