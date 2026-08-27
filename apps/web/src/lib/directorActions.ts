@@ -6,7 +6,11 @@ import { useStore } from "./store.js";
 
 function approvedPlan() {
   const plan = useStore.getState().directorPlan;
-  if (!plan?.approvedAt) throw new Error("Approve the BeatSync video plan before generating storyboard images.");
+  if (!plan) throw new Error("No Director plan is loaded.");
+  if (plan.planningBasis !== "professional-treatment") {
+    throw new Error("This is a Legacy Director plan. Upgrade through Lyrics → Song Understanding → Treatment before Professional Director generation.");
+  }
+  if (!plan.approvedAt) throw new Error("Approve the BeatSync video plan before generating storyboard images.");
   return plan;
 }
 
