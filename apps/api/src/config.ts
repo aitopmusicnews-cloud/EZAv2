@@ -13,6 +13,10 @@ const optionalNonEmpty = z
 const Env = z.object({
   AGNES_API_KEY: optionalNonEmpty.optional(),
   SYNC_API_KEY: optionalNonEmpty.optional(),
+  OPENAI_API_KEY: optionalNonEmpty.optional(),
+  TRANSCRIPTION_TEXT_MODEL: z.string().min(1).default("gpt-transcribe"),
+  TRANSCRIPTION_TIMING_MODEL: z.string().min(1).default("whisper-1"),
+  SONG_UNDERSTANDING_MODEL: z.string().min(1).default("gpt-5.6"),
   PORT: z.coerce.number().default(3001),
   PUBLIC_BASE_URL: z.string().url().default("http://localhost:3001"),
   // Comma-separated list of allowed CORS origins (or a single URL).
@@ -61,6 +65,11 @@ if (!config.AGNES_API_KEY) {
 }
 if (!config.SYNC_API_KEY) {
   console.warn("WARN: SYNC_API_KEY is not set. Manual lip-sync is offline.");
+}
+if (!config.OPENAI_API_KEY) {
+  console.warn(
+    "WARN: OPENAI_API_KEY is not set. Automatic lyric transcription and Song Understanding are offline; manual/official lyric entry remains available."
+  );
 }
 if (config.STORAGE_BACKEND === "s3") {
   if (!config.S3_BUCKET || !config.S3_REGION) {
