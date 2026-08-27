@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "dev": "pnpm --filter @mvs/shared build && pnpm -r --parallel run dev",
-    "build": "pnpm -r build",
+    "build": "pnpm --filter @mvs/shared build && ./node_modules/.bin/tsc -p apps/web/tsconfig.json --pretty false && pnpm -r build",
     "typecheck": "pnpm --filter @mvs/shared build && pnpm -r typecheck",
     "dev:web": "pnpm --filter @mvs/web dev",
     "dev:api": "pnpm --filter @mvs/api dev",
