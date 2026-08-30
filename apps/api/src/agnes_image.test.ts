@@ -87,6 +87,21 @@ describe("Agnes image integration", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("allows up to 120 seconds for the initial video create request", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ video_id: "video-timeout" }));
+
+    await createAgnesVideo(
+      { prompt: "slow provider start", width: 1152, height: 768, numFrames: 121 },
+      "secret",
+      fetchMock as typeof fetch,
+      async () => {},
+    );
+
+    expect(timeoutSpy).toHaveBeenCalledWith(120_000);
+    timeoutSpy.mockRestore();
+  });
+
   it("forwards video negative prompts to Agnes", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ video_id: "video-negative" }));
     await createAgnesVideo(
