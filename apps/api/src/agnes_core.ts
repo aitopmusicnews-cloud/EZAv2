@@ -111,13 +111,19 @@ export function preferredAgnesResultUrl(videoId: string): string {
 }
 
 export function validCompletedMetadataUrl(payload: unknown): string | null {
-  if (!isRecord(payload) || !isRecord(payload.metadata)) return null;
-  const value = payload.metadata.url;
-  if (typeof value !== "string") return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" ? url.toString() : null;
-  } catch {
-    return null;
+  if (!isRecord(payload)) return null;
+  const candidates = [
+    isRecord(payload.metadata) ? payload.metadata.url : undefined,
+    payload.url,
+  ];
+  for (const value of candidates) {
+    if (typeof value !== "string") continue;
+    try {
+      const url = new URL(value);
+      if (url.protocol === "https:") return url.toString();
+    } catch {
+      // Try the next supported Agnes result location.
+    }
   }
+  return null;
 }
