@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseAgnesImageResult } from "./agnes_core.js";
-import { createAgnesImage, createAgnesVideo } from "./agnes_http.js";
+import { createAgnesImage, createAgnesVideo, getAgnesResultOnce } from "./agnes_http.js";
 
 const jsonResponse = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
@@ -100,6 +100,22 @@ describe("Agnes image integration", () => {
 
     expect(timeoutSpy).toHaveBeenCalledWith(120_000);
     timeoutSpy.mockRestore();
+  });
+
+  it("accepts a completed video URL returned at the top level", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      status: "completed",
+      url: "https://cdn.example.com/generated-video.mp4",
+    }));
+
+    await expect(getAgnesResultOnce(
+      { videoId: "video-completed", taskId: null },
+      "secret",
+      fetchMock as typeof fetch,
+    )).resolves.toEqual({
+      kind: "completed",
+      url: "https://cdn.example.com/generated-video.mp4",
+    });
   });
 
   it("forwards video negative prompts to Agnes", async () => {
