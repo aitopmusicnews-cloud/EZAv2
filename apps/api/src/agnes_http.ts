@@ -13,6 +13,7 @@ import {
 } from "./agnes_core.js";
 
 const REQUEST_TIMEOUT_MS = 30_000;
+const VIDEO_CREATE_TIMEOUT_MS = 120_000;
 const IMAGE_REQUEST_TIMEOUT_MS = 60_000;
 const TRANSIENT_AGNES_STATUSES = new Set([408, 429, 500, 502, 503, 504, 520, 522, 524]);
 const RETRY_DELAYS_MS = [500, 1000, 2000] as const;
@@ -135,7 +136,7 @@ export async function createAgnesVideo(
       },
       fetchImpl,
       sleepImpl,
-      REQUEST_TIMEOUT_MS,
+      VIDEO_CREATE_TIMEOUT_MS,
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

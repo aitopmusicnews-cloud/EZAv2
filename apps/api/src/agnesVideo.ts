@@ -184,6 +184,52 @@ export function agnesJobProgress(record: JobRecord): number {
   return isAgnesState(record.providerState) ? jobProgress(record.providerState) : 0;
 }
 
+async function submitInitialAgnesSegment(
+  jobId: string,
+  state: AgnesJobState,
+  prompt: string,
+  sourceMode: "textToVideo" | "imageToVideo" | "keyframeToVideo",
+  initialImage: string | undefined,
+  endImage: string | undefined,
+  createdAt: number,
+): Promise<void> {
+  try {
+    const imageUrl = initialImage ? await agnesImageUrl(initialImage) : undefined;
+    const firstSegmentInput = sourceMode === "keyframeToVideo" && state.segments.length === 1
+      ? { keyframeUrls: [imageUrl!, await agnesImageUrl(endImage!)] }
+      : imageUrl
+        ? { imageUrl }
+        : {};
+    const ids = await createSegment(state, 0, prompt, firstSegmentInput);
+    state.segments[0] = {
+      ...state.segments[0]!,
+      videoId: ids.videoId,
+      taskId: ids.taskId,
+      startedAt: Date.now(),
+      lastPollAt: 0,
+    };
+    await writeJobToDisk(jobId, {
+      status: "running",
+      provider: "agnes",
+      prompt,
+      createdAt,
+      updatedAt: Date.now(),
+      providerState: state,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await writeJobToDisk(jobId, {
+      status: "failed",
+      provider: "agnes",
+      prompt,
+      error: message,
+      createdAt,
+      updatedAt: Date.now(),
+      providerState: state,
+    });
+  }
+}
+
 export async function startAgnesVideo(
   req: AgnesGenerationRequest,
   sourceMode: "textToVideo" | "imageToVideo" | "keyframeToVideo",
@@ -224,43 +270,12 @@ export async function startAgnesVideo(
     providerState: state,
   });
 
-  try {
-    const imageUrl = initialImage ? await agnesImageUrl(initialImage) : undefined;
-    const firstSegmentInput = sourceMode === "keyframeToVideo" && state.segments.length === 1
-      ? { keyframeUrls: [imageUrl!, await agnesImageUrl(endImage!)] }
-      : imageUrl
-        ? { imageUrl }
-        : {};
-    const ids = await createSegment(state, 0, prompt, firstSegmentInput);
-    state.segments[0] = {
-      ...state.segments[0]!,
-      videoId: ids.videoId,
-      taskId: ids.taskId,
-      startedAt: Date.now(),
-      lastPollAt: 0,
-    };
-    await writeJobToDisk(jobId, {
-      status: "running",
-      provider: "agnes",
-      prompt,
-      createdAt: now,
-      updatedAt: Date.now(),
-      providerState: state,
+  void submitInitialAgnesSegment(jobId, state, prompt, sourceMode, initialImage, endImage, now)
+    .catch((error) => {
+      console.error(`[Agnes Job] Failed to persist startup state for ${jobId}:`, error);
     });
-    return { id: encodeTaskId({ source: "agnes", id: jobId }) };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await writeJobToDisk(jobId, {
-      status: "failed",
-      provider: "agnes",
-      prompt,
-      error: message,
-      createdAt: now,
-      updatedAt: Date.now(),
-      providerState: state,
-    });
-    throw error;
-  }
+
+  return { id: encodeTaskId({ source: "agnes", id: jobId }) };
 }
 
 export async function refreshAgnesJob(jobId: string): Promise<JobRecord | null> {
