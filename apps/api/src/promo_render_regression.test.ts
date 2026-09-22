@@ -14,4 +14,14 @@ describe("promo render regressions", () => {
     expect(source).toContain("const timeoutMs = opts.timeoutMs ?? 30 * 60 * 1000;");
     expect(source).not.toContain("const timeoutMs = opts.timeoutMs ?? 15 * 60 * 1000;");
   });
+
+  it("persists and resumes active promo render jobs across refreshes", async () => {
+    const source = await readFile("apps/web/src/components/PromoWorkspace.tsx", "utf8");
+    expect(source).toContain('const ACTIVE_PROMO_RENDER_KEY = "ezav2-active-promo-render";');
+    expect(source).toContain("localStorage.setItem(ACTIVE_PROMO_RENDER_KEY, submitted.renderId);");
+    expect(source).toContain("localStorage.getItem(ACTIVE_PROMO_RENDER_KEY)");
+    expect(source).toContain("submitPromoRender(req)");
+    expect(source).toContain("getPromoRenderJob(renderId)");
+    expect(source).not.toContain("renderPromoTimeline(req");
+  });
 });
