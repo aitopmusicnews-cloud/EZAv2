@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { paths, storage } from "./storage.js";
 import { config } from "./config.js";
@@ -209,7 +209,7 @@ export async function renderPromo(req: PromoRenderRequest): Promise<{ url: strin
     tempPaths.push(concatPath, joinedPath);
     await writeFile(
       concatPath,
-      scenePaths.map((p) => `file '${p}'`).join("\n") + "\n",
+      scenePaths.map((p) => `file '${resolve(p)}'`).join("\n") + "\n",
       "utf8",
     );
     console.log(`promo render ${req.projectId}: joining scenes`);
