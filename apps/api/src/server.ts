@@ -202,7 +202,7 @@ app.post("/api/audio/upload", { config: { rateLimit: { max: 20, timeWindow: "1 m
   const file = await req.file();
   if (!file) return reply.code(400).send({ error: "no file" });
   const isAud = file.mimetype?.startsWith("audio/") ||
-    /\\.(mp3|wav|m4a|aac|flac|ogg|opus)$/i.test(file.filename);
+    /\.(mp3|wav|m4a|aac|flac|ogg|opus)$/i.test(file.filename);
   if (!isAud) return reply.code(400).send({ error: `expected audio, got ${file.mimetype}` });
   const buf = await file.toBuffer();
   if (!sniffMatches(buf, "audio")) {
