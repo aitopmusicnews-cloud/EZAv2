@@ -298,3 +298,73 @@ export async function saveLibraryFolder(folder: Omit<LibraryFolder, "createdAt">
 export async function deleteLibraryFolder(id: string): Promise<void> {
   await jsonOrThrow(await fetch(`/api/library/folders/${id}`, { method: "DELETE" }));
 }
+
+// Promo / Social Ad ---------------------------------------------------------
+
+export type PromoMotion = "static" | "push-in" | "zoom-out" | "pan-left" | "pan-right";
+export type PromoFit = "cover" | "contain";
+export type PromoTextPosition = "top" | "center" | "bottom";
+
+export type PromoRenderRequest = {
+  projectId: string;
+  duration: number;
+  aspectRatio: "9:16" | "16:9" | "4:5";
+  scenes: Array<{
+    url: string;
+    kind: "image" | "video";
+    duration: number;
+    motion?: PromoMotion;
+    fit?: PromoFit;
+    focalX?: number;
+    focalY?: number;
+  }>;
+  textOverlays?: Array<{
+    text: string;
+    start: number;
+    end: number;
+    position?: PromoTextPosition;
+  }>;
+  musicUrl?: string;
+  voiceoverUrl?: string;
+  musicVolume?: number;
+  voiceoverVolume?: number;
+  duckMusic?: boolean;
+};
+
+export type PromoRenderJob = RenderJob;
+
+export async function uploadAudioAsset(file: File): Promise<{ id: string; url: string; filename: string }> {
+  const fd = new FormData();
+  fd.append("file", file);
+  return jsonOrThrow(await fetch("/api/audio/upload", { method: "POST", body: fd }));
+}
+
+export async function submitPromoRender(req: PromoRenderRequest): Promise<RenderSubmitResponse> {
+  return jsonOrThrow(await fetch("/api/promo/render", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(req),
+  }));
+}
+
+export async function getPromoRenderJob(renderId: string): Promise<PromoRenderJob> {
+  return jsonOrThrow(await fetch(`/api/promo/render/jobs/${encodeURIComponent(renderId)}`));
+}
+
+export async function renderPromoTimeline(
+  req: PromoRenderRequest,
+  opts: { intervalMs?: number; timeoutMs?: number; onUpdate?: (job: PromoRenderJob) => void } = {},
+): Promise<{ url: string }> {
+  const intervalMs = opts.intervalMs ?? 2000;
+  const timeoutMs = opts.timeoutMs ?? 15 * 60 * 1000;
+  const { renderId } = await submitPromoRender(req);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const job = await getPromoRenderJob(renderId);
+    opts.onUpdate?.(job);
+    if (job.state === "succeeded" && job.url) return { url: job.url };
+    if (job.state === "failed") throw new Error(job.error ?? "promo render failed");
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error("promo render timed out");
+}
