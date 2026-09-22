@@ -95,7 +95,13 @@ export function PromoWorkspace() {
     try {
       const out = await renderPromoTimeline(req, { onUpdate: (job: PromoRenderJob) => { if (job.state === "running") setRenderStatus("Rendering promo…"); else if (job.state === "queued") setRenderStatus("Queued…"); } });
       setRenderUrl(out.url); setRenderStatus("Render complete");
-    } catch (e) { setError(getErrorMessage(e)); setRenderStatus(null); }
+    } catch (e) {
+      const message = getErrorMessage(e);
+      setError(message.includes("render job not found")
+        ? "Render was interrupted by a server restart. Please export again."
+        : message);
+      setRenderStatus(null);
+    }
   }
 
   return <div className="promo-workspace">
@@ -135,6 +141,14 @@ export function PromoWorkspace() {
           <AudioCard title="Background music" asset={music} volume={musicVolume} max={1.25} onVolume={setMusicVolume} onFile={(f) => void addAudio(f, "music")} />
           <AudioCard title="Voiceover" asset={voice} volume={voiceVolume} max={1.5} onVolume={setVoiceVolume} onFile={(f) => void addAudio(f, "voice")} extra={<label className="promo-check"><input type="checkbox" checked={duckMusic} onChange={(e) => setDuckMusic(e.target.checked)} /> Auto-duck music under voice</label>} />
         </section>
+        {renderUrl && <section className="promo-render-ready">
+          <strong>Render ready</strong>
+          <span>Your promo finished successfully.</span>
+          <div>
+            <a className="btn primary" href={renderUrl} target="_blank" rel="noreferrer">View render</a>
+            <a className="btn" href={renderUrl} download>Download MP4</a>
+          </div>
+        </section>}
       </main>
 
       <aside className="promo-inspector">
