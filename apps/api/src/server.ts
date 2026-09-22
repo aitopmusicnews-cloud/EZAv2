@@ -21,6 +21,7 @@ import { agnesJobProgress, refreshAgnesJob, startAgnesVideo } from "./agnesVideo
 import { generateAndSaveAgnesImage } from "./agnes_image.js";
 import { createSyncLipSync, getSyncLipSync } from "./sync_lipsync.js";
 import { submitRender, getRenderJob } from "./render_queue.js";
+import { submitPromoRender, getPromoRenderJob } from "./promo_render_queue.js";
 import { FfmpegError } from "./ffmpeg.js";
 import { extractLastFrame } from "./frames.js";
 import { sliceAudio } from "./audio_slice.js";
@@ -195,6 +196,20 @@ app.post("/api/songs/upload", { config: { rateLimit: { max: 10, timeWindow: "1 m
     await writeAnalysisError(id, String((err as Error)?.message ?? err));
     throw err;
   }
+});
+
+app.post("/api/audio/upload", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {
+  const file = await req.file();
+  if (!file) return reply.code(400).send({ error: "no file" });
+  const isAud = file.mimetype?.startsWith("audio/") ||
+    /\.(mp3|wav|m4a|aac|flac|ogg|opus)$/i.test(file.filename);
+  if (!isAud) return reply.code(400).send({ error: `expected audio, got ${file.mimetype}` });
+  const buf = await file.toBuffer();
+  if (!sniffMatches(buf, "audio")) {
+    return reply.code(400).send({ error: "file content is not a recognized audio format" });
+  }
+  const { id, publicUrl } = await saveUpload(buf, file.filename, file.mimetype);
+  return reply.send({ id, url: resolvePublicUrl(req, publicUrl), filename: file.filename });
 });
 
 app.post("/api/images/upload", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {
@@ -408,6 +423,64 @@ app.get("/api/render/jobs/:renderId", async (req, reply) => {
   const params = z.object({ renderId: SafeId }).parse(req.params);
   const job = getRenderJob(params.renderId);
   if (!job) return reply.code(404).send({ error: "render job not found" });
+  return reply.send(job);
+});
+
+// Promo / Social Ad -----------------------------------------------------
+
+const PromoSceneBody = z.object({
+  url: z.string().url(),
+  kind: z.enum(["image", "video"]),
+  duration: z.number().finite().min(0.5).max(30),
+  motion: z.enum(["static", "push-in", "zoom-out", "pan-left", "pan-right"]).default("static"),
+  fit: z.enum(["cover", "contain"]).default("cover"),
+  focalX: z.number().finite().min(0).max(100).default(50),
+  focalY: z.number().finite().min(0).max(100).default(50),
+});
+
+const PromoTextOverlayBody = z.object({
+  text: z.string().trim().min(1).max(500),
+  start: z.number().finite().min(0),
+  end: z.number().finite().positive(),
+  position: z.enum(["top", "center", "bottom"]).default("bottom"),
+}).refine((overlay) => overlay.end > overlay.start, {
+  message: "promo text end must be greater than start",
+});
+
+const PromoRenderBody = z.object({
+  projectId: SafeId,
+  duration: z.number().finite().positive().max(120),
+  aspectRatio: z.enum(["9:16", "16:9", "4:5"]).default("9:16"),
+  scenes: z.array(PromoSceneBody).min(1).max(10),
+  textOverlays: z.array(PromoTextOverlayBody).max(30).default([]),
+  musicUrl: z.string().url().optional(),
+  voiceoverUrl: z.string().url().optional(),
+  musicVolume: z.number().finite().min(0).max(2).default(0.72),
+  voiceoverVolume: z.number().finite().min(0).max(2).default(1),
+  duckMusic: z.boolean().default(true),
+}).superRefine((body, ctx) => {
+  const sceneDuration = body.scenes.reduce((sum, scene) => sum + scene.duration, 0);
+  if (Math.abs(sceneDuration - body.duration) > 0.05) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "promo scene durations must equal project duration" });
+  }
+  for (const overlay of body.textOverlays) {
+    if (overlay.end > body.duration + 1e-3) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "promo text extends past project duration" });
+      break;
+    }
+  }
+});
+
+app.post("/api/promo/render", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (req, reply) => {
+  const body = PromoRenderBody.parse(req.body);
+  const job = submitPromoRender(body);
+  return reply.send({ renderId: job.id, state: job.state, queuePosition: job.queuePosition });
+});
+
+app.get("/api/promo/render/jobs/:renderId", async (req, reply) => {
+  const params = z.object({ renderId: SafeId }).parse(req.params);
+  const job = getPromoRenderJob(params.renderId);
+  if (!job) return reply.code(404).send({ error: "promo render job not found" });
   return reply.send(job);
 });
 
