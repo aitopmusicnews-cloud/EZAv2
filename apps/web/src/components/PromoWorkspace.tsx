@@ -1,16 +1,19 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getErrorMessage } from "@mvs/shared";
 import {
   uploadAudioAsset,
   uploadImage,
   uploadVideo,
-  renderPromoTimeline,
+  getPromoRenderJob,
+  submitPromoRender,
   type PromoRenderRequest,
   type PromoRenderJob,
 } from "../lib/api.js";
 import "../styles/promo.css";
 
 const MAX_SCENES = 10;
+const ACTIVE_PROMO_RENDER_KEY = "ezav2-active-promo-render";
+const PROMO_POLL_INTERVAL_MS = 3000;
 type Motion = "static" | "push-in" | "zoom-out" | "pan-left" | "pan-right";
 type Fit = "cover" | "contain";
 type Position = "top" | "center" | "bottom";
@@ -24,6 +27,30 @@ type AudioAsset = { name: string; url: string };
 const newId = () => `promo-${crypto.randomUUID().slice(0, 8)}`;
 const isImage = (f: File) => f.type.startsWith("image/") || /\.(png|jpe?g|webp|gif)$/i.test(f.name);
 const isVideo = (f: File) => f.type.startsWith("video/") || /\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(f.name);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function waitForPromoRender(
+  renderId: string,
+  onUpdate: (job: PromoRenderJob) => void,
+  isCancelled: () => boolean = () => false,
+): Promise<{ url: string } | null> {
+  while (!isCancelled()) {
+    const job = await getPromoRenderJob(renderId);
+    if (isCancelled()) return null;
+    onUpdate(job);
+    if (job.state === "succeeded" && job.url) {
+      localStorage.removeItem(ACTIVE_PROMO_RENDER_KEY);
+      return { url: job.url };
+    }
+    if (job.state === "failed") {
+      localStorage.removeItem(ACTIVE_PROMO_RENDER_KEY);
+      throw new Error(job.error ?? "promo render failed");
+    }
+    await sleep(PROMO_POLL_INTERVAL_MS);
+  }
+  return null;
+}
 
 export function PromoWorkspace() {
   const [scenes, setScenes] = useState<Scene[]>([]);
@@ -44,7 +71,42 @@ export function PromoWorkspace() {
   const selected = scenes.find((s) => s.id === selectedId) ?? scenes[0] ?? null;
   const totalDuration = useMemo(() => scenes.reduce((n, s) => n + s.duration, 0), [scenes]);
   const onTarget = totalDuration >= 30 && totalDuration <= 35;
+  const renderInProgress = !!renderStatus && !renderUrl;
   const patch = (id: string, p: Partial<Scene>) => setScenes((xs) => xs.map((s) => s.id === id ? { ...s, ...p } : s));
+
+  useEffect(() => {
+    const renderId = localStorage.getItem(ACTIVE_PROMO_RENDER_KEY);
+    if (!renderId) return;
+
+    let cancelled = false;
+    setError(null);
+    setRenderStatus("Reconnecting to render…");
+
+    void waitForPromoRender(
+      renderId,
+      (job) => {
+        if (job.state === "running") setRenderStatus("Rendering promo…");
+        else if (job.state === "queued") setRenderStatus("Queued…");
+      },
+      () => cancelled,
+    ).then((out) => {
+      if (cancelled || !out) return;
+      setRenderUrl(out.url);
+      setRenderStatus("Render complete");
+    }).catch((e) => {
+      if (cancelled) return;
+      const message = getErrorMessage(e);
+      if (message.includes("render job not found")) {
+        localStorage.removeItem(ACTIVE_PROMO_RENDER_KEY);
+        setError("The previous render job is no longer available. Please export again.");
+      } else {
+        setError(message);
+      }
+      setRenderStatus(null);
+    });
+
+    return () => { cancelled = true; };
+  }, []);
 
   async function addScene(file: File, replaceId?: string) {
     if (!isImage(file) && !isVideo(file)) return setError("Use an image or video file.");
@@ -93,13 +155,24 @@ export function PromoWorkspace() {
       musicUrl: music?.url, voiceoverUrl: voice?.url, musicVolume, voiceoverVolume: voiceVolume, duckMusic,
     };
     try {
-      const out = await renderPromoTimeline(req, { onUpdate: (job: PromoRenderJob) => { if (job.state === "running") setRenderStatus("Rendering promo…"); else if (job.state === "queued") setRenderStatus("Queued…"); } });
-      setRenderUrl(out.url); setRenderStatus("Render complete");
+      const submitted = await submitPromoRender(req);
+      localStorage.setItem(ACTIVE_PROMO_RENDER_KEY, submitted.renderId);
+      const out = await waitForPromoRender(submitted.renderId, (job) => {
+        if (job.state === "running") setRenderStatus("Rendering promo…");
+        else if (job.state === "queued") setRenderStatus("Queued…");
+      });
+      if (out) {
+        setRenderUrl(out.url);
+        setRenderStatus("Render complete");
+      }
     } catch (e) {
       const message = getErrorMessage(e);
-      setError(message.includes("render job not found")
-        ? "Render was interrupted by a server restart. Please export again."
-        : message);
+      if (message.includes("render job not found")) {
+        localStorage.removeItem(ACTIVE_PROMO_RENDER_KEY);
+        setError("Render was interrupted by a server restart. Please export again.");
+      } else {
+        setError(message);
+      }
       setRenderStatus(null);
     }
   }
@@ -110,7 +183,7 @@ export function PromoWorkspace() {
       <div className="promo-header-actions">
         <span className={`promo-duration ${onTarget ? "on-target" : "off-target"}`}>{totalDuration.toFixed(1)}s · target 30–35s</span>
         <a className="btn ghost" href="/">← Music Video</a>
-        <button className="btn primary" disabled={!scenes.length || !!busy || renderStatus === "Rendering promo…"} onClick={() => void exportPromo()}>{renderStatus === "Rendering promo…" || renderStatus === "Queued…" ? renderStatus : "Export Promo MP4"}</button>
+        <button className="btn primary" disabled={!scenes.length || !!busy || renderInProgress} onClick={() => void exportPromo()}>{renderInProgress ? renderStatus : "Export Promo MP4"}</button>
         {renderUrl && <a className="btn" href={renderUrl} target="_blank" rel="noreferrer">View render</a>}
       </div>
     </header>
