@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { getErrorMessage } from "@mvs/shared";
 import {
   uploadAudioAsset,
@@ -93,7 +93,7 @@ export function PromoWorkspace() {
       musicUrl: music?.url, voiceoverUrl: voice?.url, musicVolume, voiceoverVolume: voiceVolume, duckMusic,
     };
     try {
-      const out = await renderPromoTimeline(req, { onUpdate: (job: PromoRenderJob) => setRenderStatus(job.state === "running" ? "Rendering promo…" : job.state === "queued" ? "Queued…" : renderStatus) });
+      const out = await renderPromoTimeline(req, { onUpdate: (job: PromoRenderJob) => { if (job.state === "running") setRenderStatus("Rendering promo…"); else if (job.state === "queued") setRenderStatus("Queued…"); } });
       setRenderUrl(out.url); setRenderStatus("Render complete");
     } catch (e) { setError(getErrorMessage(e)); setRenderStatus(null); }
   }
@@ -164,6 +164,6 @@ export function PromoWorkspace() {
   </div>;
 }
 
-function AudioCard({ title, asset, volume, max, onVolume, onFile, extra }: { title: string; asset: AudioAsset | null; volume: number; max: number; onVolume: (n: number) => void; onFile: (f: File) => void; extra?: React.ReactNode }) {
+function AudioCard({ title, asset, volume, max, onVolume, onFile, extra }: { title: string; asset: AudioAsset | null; volume: number; max: number; onVolume: (n: number) => void; onFile: (f: File) => void; extra?: ReactNode }) {
   return <div className="promo-audio-card"><div className="promo-audio-title"><strong>{title}</strong><span>{asset?.name ?? "none"}</span></div><label className="btn promo-file-button">{asset ? "Replace" : "Add"}<input hidden type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg" onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ""; }} /></label><label className="promo-range"><span>Volume {Math.round(volume * 100)}%</span><input type="range" min="0" max={max} step="0.01" value={volume} onChange={(e) => onVolume(Number(e.target.value))} /></label>{extra}</div>;
 }
