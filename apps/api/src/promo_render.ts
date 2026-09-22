@@ -41,9 +41,13 @@ export type PromoRenderRequest = {
 };
 
 function outputSize(aspectRatio: PromoRenderRequest["aspectRatio"]): { width: number; height: number } {
-  if (aspectRatio === "9:16") return { width: 1080, height: 1920 };
-  if (aspectRatio === "4:5") return { width: 1080, height: 1350 };
-  return { width: 1920, height: 1080 };
+  // Render's free instance has a 512 MiB memory ceiling. A seven-scene
+  // 1080x1920 filter graph can transiently exceed it and restart the service,
+  // which also drops the in-memory render job. Social-first 720p keeps the
+  // render stable while still matching the app's existing generated sizes.
+  if (aspectRatio === "9:16") return { width: 720, height: 1280 };
+  if (aspectRatio === "4:5") return { width: 720, height: 900 };
+  return { width: 1280, height: 720 };
 }
 
 async function resolveInput(url: string): Promise<string> {
@@ -257,12 +261,14 @@ export async function renderPromo(req: PromoRenderRequest): Promise<{ url: strin
 
   const args = [
     ...inputs,
+    "-filter_complex_threads", "1",
     "-filter_complex", filters.join(";"),
     "-map", `[${videoLabel}]`,
     "-map", "[aout]",
     "-t", duration,
     "-r", String(fps),
     "-c:v", "libx264",
+    "-threads", "1",
     "-preset", "veryfast",
     "-crf", "19",
     "-pix_fmt", "yuv420p",
