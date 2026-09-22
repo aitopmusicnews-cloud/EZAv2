@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, writeFile, readFile, rename, rm, readdir, stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { join, extname, dirname } from "node:path";
 import {
   S3Client,
@@ -243,11 +243,16 @@ class S3Backend implements StorageBackend {
   async saveRender(localPath: string, key: string, contentType?: string) {
     const objectKey = `renders/${key}`;
     const ext = extname(key);
+    const fileStat = await stat(localPath);
+    // Stream large MP4s to S3 instead of reading the whole file into Node
+    // memory. On Render's 512 MiB instance, buffering a finished promo can
+    // otherwise cause a process restart right at render completion.
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: objectKey,
-        Body: await readFile(localPath),
+        Body: createReadStream(localPath),
+        ContentLength: fileStat.size,
         ContentType: contentType ?? mimeType(ext),
         CacheControl: "public, max-age=31536000, immutable",
       })
