@@ -356,7 +356,7 @@ export async function renderPromoTimeline(
   opts: { intervalMs?: number; timeoutMs?: number; onUpdate?: (job: PromoRenderJob) => void } = {},
 ): Promise<{ url: string }> {
   const intervalMs = opts.intervalMs ?? 2000;
-  const timeoutMs = opts.timeoutMs ?? 15 * 60 * 1000;
+  const timeoutMs = opts.timeoutMs ?? 30 * 60 * 1000;
   const { renderId } = await submitPromoRender(req);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
