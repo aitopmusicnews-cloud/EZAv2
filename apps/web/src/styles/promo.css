@@ -200,3 +200,18 @@
   .promo-grid { grid-template-columns: 220px 1fr 290px; }
   .promo-stage.ratio-9-16 { height: min(55vh, 560px); }
 }
+
+
+.promo-render-ready {
+  width: min(880px, 100%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(61, 220, 132, .3);
+  border-radius: 9px;
+  background: rgba(61, 220, 132, .06);
+}
+.promo-render-ready strong { color: var(--green); }
+.promo-render-ready span { color: var(--text-dim); font-size: 11px; }
+.promo-render-ready > div { margin-left: auto; display: flex; gap: 8px; }
