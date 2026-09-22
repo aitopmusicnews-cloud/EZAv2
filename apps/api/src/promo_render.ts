@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { mkdir, unlink } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { paths, storage } from "./storage.js";
 import { config } from "./config.js";
 import { runFfmpeg } from "./ffmpeg.js";
@@ -159,130 +159,165 @@ export async function renderPromo(req: PromoRenderRequest): Promise<{ url: strin
   const outputName = `${req.projectId}-promo.mp4`;
   const outputPath = join(paths.RENDERS, outputName);
 
-  const inputs: string[] = [];
-  const filters: string[] = [];
+  const tempPaths: string[] = [];
 
   const resolvedScenes = await Promise.all(req.scenes.map(async (scene) => ({
     ...scene,
     input: await resolveInput(scene.url),
   })));
 
-  for (const scene of resolvedScenes) {
-    if (scene.kind === "image") {
-      inputs.push("-loop", "1", "-framerate", String(fps), "-i", scene.input);
-    } else {
-      inputs.push("-stream_loop", "-1", "-i", scene.input);
+  try {
+    // Render one scene at a time. Keeping all scene inputs open in a single
+    // FFmpeg graph caused Render's 512 MiB instance to restart during 7-scene
+    // promos. Sequential normalization caps memory at one visual at a time.
+    const scenePaths: string[] = [];
+    for (let index = 0; index < resolvedScenes.length; index += 1) {
+      const scene = resolvedScenes[index]!;
+      const scenePath = join(paths.RENDERS, `${req.projectId}-scene-${index}.mp4`);
+      scenePaths.push(scenePath);
+      tempPaths.push(scenePath);
+      const duration = scene.duration.toFixed(6);
+      const base = sceneBaseFilter(scene, width, height);
+      const vf = scene.kind === "image"
+        ? `${base},${imageMotionFilter(scene, width, height, fps)}`
+        : `${base},fps=${fps}`;
+      const sceneInput = scene.kind === "image"
+        ? ["-loop", "1", "-framerate", String(fps), "-i", scene.input]
+        : ["-stream_loop", "-1", "-i", scene.input];
+
+      console.log(`promo render ${req.projectId}: scene ${index + 1}/${resolvedScenes.length}`);
+      await runFfmpeg([
+        ...sceneInput,
+        "-vf", vf,
+        "-t", duration,
+        "-an",
+        "-r", String(fps),
+        "-c:v", "libx264",
+        "-threads", "1",
+        "-preset", "veryfast",
+        "-crf", "20",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        "-y",
+        scenePath,
+      ]);
     }
-  }
 
-  const musicInputIndex = req.musicUrl ? resolvedScenes.length : null;
-  if (req.musicUrl) {
-    inputs.push("-stream_loop", "-1", "-i", await resolveInput(req.musicUrl));
-  }
-  const voiceInputIndex = req.voiceoverUrl
-    ? resolvedScenes.length + (req.musicUrl ? 1 : 0)
-    : null;
-  if (req.voiceoverUrl) {
-    inputs.push("-i", await resolveInput(req.voiceoverUrl));
-  }
+    // Concatenate already-normalized clips without re-encoding.
+    const concatPath = join(paths.RENDERS, `${req.projectId}-concat.txt`);
+    const joinedPath = join(paths.RENDERS, `${req.projectId}-joined.mp4`);
+    tempPaths.push(concatPath, joinedPath);
+    await writeFile(
+      concatPath,
+      scenePaths.map((p) => `file '${p}'`).join("\n") + "\n",
+      "utf8",
+    );
+    console.log(`promo render ${req.projectId}: joining scenes`);
+    await runFfmpeg([
+      "-f", "concat",
+      "-safe", "0",
+      "-i", concatPath,
+      "-c", "copy",
+      "-y",
+      joinedPath,
+    ]);
 
-  const sceneLabels: string[] = [];
-  resolvedScenes.forEach((scene, index) => {
-    const base = sceneBaseFilter(scene, width, height);
-    const duration = scene.duration.toFixed(6);
-    const out = `scene${index}`;
-    if (scene.kind === "image") {
-      const motion = imageMotionFilter(scene, width, height, fps);
+    const inputs: string[] = ["-i", joinedPath];
+    const filters: string[] = ["[0:v]setpts=PTS-STARTPTS[promo]"];
+
+    const musicInputIndex = req.musicUrl ? 1 : null;
+    if (req.musicUrl) {
+      inputs.push("-stream_loop", "-1", "-i", await resolveInput(req.musicUrl));
+    }
+    const voiceInputIndex = req.voiceoverUrl
+      ? 1 + (req.musicUrl ? 1 : 0)
+      : null;
+    if (req.voiceoverUrl) {
+      inputs.push("-i", await resolveInput(req.voiceoverUrl));
+    }
+
+    let videoLabel = "promo";
+    const overlays = (req.textOverlays ?? []).filter((overlay) => overlay.text.trim() && overlay.end > overlay.start);
+    overlays.forEach((overlay, index) => {
+      const next = `txt${index}`;
+      const fontSize = Math.max(34, Math.round(width * 0.058));
+      const text = escapeDrawText(overlay.text.trim());
       filters.push(
-        `[${index}:v]${base},${motion},trim=duration=${duration},setpts=PTS-STARTPTS[${out}]`,
+        `[${videoLabel}]drawtext=` +
+        `text='${text}':` +
+        `fontcolor=white:fontsize=${fontSize}:` +
+        `x=(w-text_w)/2:y=${overlayY(overlay.position)}:` +
+        `box=1:boxcolor=black@0.52:boxborderw=${Math.max(18, Math.round(fontSize * 0.42))}:` +
+        `shadowcolor=black@0.75:shadowx=2:shadowy=2:` +
+        `enable='between(t,${overlay.start.toFixed(3)},${overlay.end.toFixed(3)})'[${next}]`,
       );
-    } else {
+      videoLabel = next;
+    });
+
+    const duration = req.duration.toFixed(6);
+    const musicVolume = Math.max(0, Math.min(2, req.musicVolume ?? 0.72));
+    const voiceVolume = Math.max(0, Math.min(2, req.voiceoverVolume ?? 1));
+
+    if (musicInputIndex !== null) {
       filters.push(
-        `[${index}:v]${base},fps=${fps},trim=duration=${duration},setpts=PTS-STARTPTS[${out}]`,
+        `[${musicInputIndex}:a]volume=${musicVolume.toFixed(3)},` +
+        `atrim=duration=${duration},asetpts=PTS-STARTPTS[music]`,
       );
     }
-    sceneLabels.push(`[${out}]`);
-  });
-
-  filters.push(`${sceneLabels.join("")}concat=n=${sceneLabels.length}:v=1:a=0[promo]`);
-
-  let videoLabel = "promo";
-  const overlays = (req.textOverlays ?? []).filter((overlay) => overlay.text.trim() && overlay.end > overlay.start);
-  overlays.forEach((overlay, index) => {
-    const next = `txt${index}`;
-    const fontSize = Math.max(34, Math.round(width * 0.058));
-    const text = escapeDrawText(overlay.text.trim());
-    filters.push(
-      `[${videoLabel}]drawtext=` +
-      `text='${text}':` +
-      `fontcolor=white:fontsize=${fontSize}:` +
-      `x=(w-text_w)/2:y=${overlayY(overlay.position)}:` +
-      `box=1:boxcolor=black@0.52:boxborderw=${Math.max(18, Math.round(fontSize * 0.42))}:` +
-      `shadowcolor=black@0.75:shadowx=2:shadowy=2:` +
-      `enable='between(t,${overlay.start.toFixed(3)},${overlay.end.toFixed(3)})'[${next}]`,
-    );
-    videoLabel = next;
-  });
-
-  const duration = req.duration.toFixed(6);
-  const musicVolume = Math.max(0, Math.min(2, req.musicVolume ?? 0.72));
-  const voiceVolume = Math.max(0, Math.min(2, req.voiceoverVolume ?? 1));
-
-  if (musicInputIndex !== null) {
-    filters.push(
-      `[${musicInputIndex}:a]volume=${musicVolume.toFixed(3)},` +
-      `atrim=duration=${duration},asetpts=PTS-STARTPTS[music]`,
-    );
-  }
-  if (voiceInputIndex !== null) {
-    filters.push(
-      `[${voiceInputIndex}:a]volume=${voiceVolume.toFixed(3)},apad,` +
-      `atrim=duration=${duration},asetpts=PTS-STARTPTS[voice]`,
-    );
-  }
-
-  if (musicInputIndex !== null && voiceInputIndex !== null) {
-    if (req.duckMusic !== false) {
+    if (voiceInputIndex !== null) {
       filters.push(
-        "[music][voice]sidechaincompress=" +
-        "threshold=0.025:ratio=10:attack=20:release=280[ducked]",
+        `[${voiceInputIndex}:a]volume=${voiceVolume.toFixed(3)},apad,` +
+        `atrim=duration=${duration},asetpts=PTS-STARTPTS[voice]`,
       );
-      filters.push("[ducked][voice]amix=inputs=2:duration=longest:normalize=0[aout]");
-    } else {
-      filters.push("[music][voice]amix=inputs=2:duration=longest:normalize=0[aout]");
     }
-  } else if (musicInputIndex !== null) {
-    filters.push("[music]anull[aout]");
-  } else if (voiceInputIndex !== null) {
-    filters.push("[voice]anull[aout]");
-  } else {
-    filters.push(`anullsrc=channel_layout=stereo:sample_rate=48000,atrim=duration=${duration}[aout]`);
-  }
 
-  const args = [
-    ...inputs,
-    "-filter_complex_threads", "1",
-    "-filter_complex", filters.join(";"),
-    "-map", `[${videoLabel}]`,
-    "-map", "[aout]",
-    "-t", duration,
-    "-r", String(fps),
-    "-c:v", "libx264",
-    "-threads", "1",
-    "-preset", "veryfast",
-    "-crf", "19",
-    "-pix_fmt", "yuv420p",
-    "-c:a", "aac",
-    "-b:a", "192k",
-    "-movflags", "+faststart",
-    "-y",
-    outputPath,
-  ];
+    if (musicInputIndex !== null && voiceInputIndex !== null) {
+      if (req.duckMusic !== false) {
+        filters.push("[voice]asplit=2[voicekey][voicemix]");
+        filters.push(
+          "[music][voicekey]sidechaincompress=" +
+          "threshold=0.025:ratio=10:attack=20:release=280[ducked]",
+        );
+        filters.push("[ducked][voicemix]amix=inputs=2:duration=longest:normalize=0[aout]");
+      } else {
+        filters.push("[music][voice]amix=inputs=2:duration=longest:normalize=0[aout]");
+      }
+    } else if (musicInputIndex !== null) {
+      filters.push("[music]anull[aout]");
+    } else if (voiceInputIndex !== null) {
+      filters.push("[voice]anull[aout]");
+    } else {
+      filters.push(`anullsrc=channel_layout=stereo:sample_rate=48000,atrim=duration=${duration}[aout]`);
+    }
 
-  await runFfmpeg(args);
+    console.log(`promo render ${req.projectId}: final encode`);
+    await runFfmpeg([
+      ...inputs,
+      "-filter_complex_threads", "1",
+      "-filter_complex", filters.join(";"),
+      "-map", `[${videoLabel}]`,
+      "-map", "[aout]",
+      "-t", duration,
+      "-r", String(fps),
+      "-c:v", "libx264",
+      "-threads", "1",
+      "-preset", "veryfast",
+      "-crf", "19",
+      "-pix_fmt", "yuv420p",
+      "-c:a", "aac",
+      "-b:a", "192k",
+      "-movflags", "+faststart",
+      "-y",
+      outputPath,
+    ]);
+
   const { publicUrl } = await storage.saveRender(outputPath, outputName, "video/mp4");
-  if (config.STORAGE_BACKEND === "s3") {
-    await unlink(outputPath).catch(() => {});
+    if (config.STORAGE_BACKEND === "s3") {
+      await unlink(outputPath).catch(() => {});
+    }
+    console.log(`promo render ${req.projectId}: complete`);
+    return { url: publicUrl };
+  } finally {
+    await Promise.all(tempPaths.map((p) => unlink(p).catch(() => {})));
   }
-  return { url: publicUrl };
 }
