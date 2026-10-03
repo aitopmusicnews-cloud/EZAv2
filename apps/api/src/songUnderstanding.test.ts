@@ -44,6 +44,25 @@ describe("generateSongUnderstanding", () => {
     expect(result.uncertaintyNotes).toEqual(["destination is not specified"]);
   });
 
+  it("uses Azure Responses endpoint and api-key auth when configured", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({ "api-key": "azure-test" });
+      const body = JSON.parse(String(init?.body)) as { model: string };
+      expect(body.model).toBe("gpt-4.1-mini");
+      return new Response(JSON.stringify({
+        output: [{ content: [{ type: "output_text", text: JSON.stringify(validUnderstanding) }] }],
+      }), { status: 200 });
+    });
+
+    await generateSongUnderstanding(vocalRequest(), {
+      apiKey: "azure-test",
+      endpoint: "https://example.services.ai.azure.com/openai/v1/responses",
+      model: "gpt-4.1-mini",
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
   it("rejects unapproved vocal lyrics before calling the provider", async () => {
     const request = vocalRequest();
     request.lyrics.approvedAt = undefined;
