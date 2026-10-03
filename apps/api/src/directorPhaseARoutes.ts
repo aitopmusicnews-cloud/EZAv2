@@ -31,8 +31,8 @@ export function createDefaultDirectorPhaseADeps(): DirectorPhaseADeps {
   return {
     openAIConfigured: () => Boolean(config.OPENAI_API_KEY),
     transcriptionConfigured: () => Boolean(
-      config.AZURE_OPENAI_TRANSCRIPTION_ENDPOINT &&
-      (config.AZURE_OPENAI_TRANSCRIPTION_API_KEY || config.AZURE_OPENAI_MAIN_API_KEY)
+      config.AZURE_SPEECH_TRANSCRIPTION_ENDPOINT &&
+      (config.AZURE_SPEECH_API_KEY || config.AZURE_OPENAI_TRANSCRIPTION_API_KEY || config.AZURE_OPENAI_MAIN_API_KEY)
     ),
     understandingConfigured: () => Boolean(
       (config.AZURE_OPENAI_MAIN_ENDPOINT && config.AZURE_OPENAI_MAIN_API_KEY) || config.OPENAI_API_KEY
@@ -51,7 +51,7 @@ export async function directorPhaseARoutes(app: FastifyInstance, options: Direct
   app.post("/api/director/transcribe", { config: { rateLimit: { max: 4, timeWindow: "1 minute" } } }, async (req, reply) => {
     const transcriptionConfigured = deps.transcriptionConfigured ?? deps.openAIConfigured;
     if (!transcriptionConfigured()) {
-      return reply.code(503).send({ error: "Azure automatic lyric transcription is not configured. Paste official lyrics or deploy/configure Azure Whisper." });
+      return reply.code(503).send({ error: "Azure Speech automatic lyric transcription is not configured. Paste official lyrics or configure the Azure resource key." });
     }
     const parsed = TranscribeSongRequest.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues.map((issue) => issue.message).join("; ") });
@@ -62,6 +62,9 @@ export async function directorPhaseARoutes(app: FastifyInstance, options: Direct
       const message = error instanceof Error ? error.message : String(error);
       if (/trusted storage origin|does not match uploaded song/i.test(message)) {
         return reply.code(400).send({ error: message });
+      }
+      if (/Azure Speech/i.test(message)) {
+        return reply.code(502).send({ error: message });
       }
       throw error;
     }
