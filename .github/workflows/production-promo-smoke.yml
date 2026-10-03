@@ -6,6 +6,11 @@ on:
       - main
     paths:
       - ".github/workflows/production-promo-smoke.yml"
+      - "apps/api/src/azureTts.ts"
+      - "apps/api/src/config.ts"
+      - "apps/api/src/server.ts"
+      - "apps/api/src/promo_render.ts"
+      - "apps/api/src/promo_render_queue.ts"
   workflow_dispatch:
 
 permissions:

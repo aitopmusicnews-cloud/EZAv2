@@ -9,6 +9,10 @@ type SynthesizeOptions = {
   fetchImpl?: typeof fetch;
 };
 
+export function resolveAzureTtsApiKey(ttsKey?: string, mainKey?: string): string {
+  return ttsKey?.trim() || mainKey?.trim() || "";
+}
+
 async function safeProviderError(response: Response): Promise<string> {
   const text = await response.text();
   try {
@@ -21,7 +25,7 @@ async function safeProviderError(response: Response): Promise<string> {
 
 export async function synthesizePromoVoiceover(text: string, options: SynthesizeOptions = {}) {
   const endpoint = config.AZURE_OPENAI_TTS_ENDPOINT;
-  const apiKey = config.AZURE_OPENAI_TTS_API_KEY;
+  const apiKey = resolveAzureTtsApiKey(config.AZURE_OPENAI_TTS_API_KEY, config.AZURE_OPENAI_MAIN_API_KEY);
   if (!endpoint || !apiKey) throw new Error("Azure promo voiceover is not configured.");
 
   const input = text.trim();
