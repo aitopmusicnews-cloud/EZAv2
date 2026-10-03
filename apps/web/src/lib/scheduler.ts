@@ -11,9 +11,21 @@ import { agnesClientPollTimeoutMs } from "./agnes-polling.js";
 import { toast } from "./toast.js";
 import type { Clip, GenerationModel, Task } from "@mvs/shared";
 
-/** Keep a small queue so one project does not launch an accidental provider storm. */
-export const MAX_CONCURRENT = 2;
+/** Agnes free/default video access executes about one create request per minute.
+ * Keep submissions serialized so a multi-shot Director plan does not immediately
+ * trip provider 429s. Paid plans still benefit because generation/polling is
+ * asynchronous and the next create is released as soon as the safe interval passes.
+ */
+export const MAX_CONCURRENT = 1;
+export const AGNES_MIN_CREATE_INTERVAL_MS = 65_000;
 const AGNES_MODEL = "agnes-video-v2.0";
+let lastAgnesCreateStartedAt = 0;
+
+async function waitForAgnesCreateSlot(): Promise<void> {
+  const waitMs = Math.max(0, lastAgnesCreateStartedAt + AGNES_MIN_CREATE_INTERVAL_MS - Date.now());
+  if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+  lastAgnesCreateStartedAt = Date.now();
+}
 
 export type JobState = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type GenerationSource = "textToVideo" | "imageToVideo" | "keyframeToVideo";
@@ -247,6 +259,11 @@ async function run(jobId: string): Promise<void> {
   useStore.getState().updateClip(job.clipId, { status: "generating" });
 
   try {
+    await waitForAgnesCreateSlot();
+    if (isCancelled(jobId)) {
+      useStore.getState().updateClip(job.clipId, { status: "empty" });
+      return;
+    }
     const task = await startTask(job);
     setJobPatch(jobId, { taskId: task.id });
     useStore.getState().updateClip(job.clipId, { generationTaskId: task.id });
