@@ -7,9 +7,14 @@ function directorReferences(bible: ProductionBible, references: ReferenceAsset[]
     ...(bible.characterReferenceAssetIds ?? []),
     ...(bible.vehicleReferenceAssetIds ?? []),
   ]);
-  const hasExplicitLock = explicit.size > 0;
+  const hasExplicitCharacterChoice = bible.characterReferenceAssetIds !== undefined;
+  const hasExplicitVehicleChoice = bible.vehicleReferenceAssetIds !== undefined;
   return references
-    .filter((asset) => hasExplicitLock ? explicit.has(asset.id) : asset.locked === true)
+    .filter((asset) => {
+      if (asset.role === "character" && hasExplicitCharacterChoice) return explicit.has(asset.id);
+      if (asset.role === "vehicle" && hasExplicitVehicleChoice) return explicit.has(asset.id);
+      return explicit.has(asset.id) || asset.locked === true;
+    })
     .filter((asset, index, all) => all.findIndex((item) => item.id === asset.id) === index)
     .slice(0, 8);
 }
