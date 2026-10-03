@@ -91,6 +91,12 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
   ].filter((value): value is string => Boolean(value))));
 
   const setLockedCharacter = (url: string) => {
+    // Character Lock is singular: clear stale character locks before applying the
+    // selected identity so storyboard composition cannot blend multiple people.
+    referenceAssets
+      .filter((item) => item.role === "character" && item.locked === true && item.url !== url)
+      .forEach((item) => upsertReferenceAsset({ ...item, locked: false }));
+
     if (!url) {
       updateDirectorBible({ characterReferenceAssetIds: [] });
       return;
