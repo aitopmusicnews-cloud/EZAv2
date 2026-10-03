@@ -561,7 +561,7 @@ function LyricsStep({
       </div>
 
       <div className="director-action-row">
-        <button type="button" className="btn ghost" disabled={busy === "transcription"} onClick={onRetry}>Retry Transcription</button>
+        <button type="button" className="btn ghost" disabled={busy === "transcription"} onClick={onRetry}>{document ? "Retry Transcription" : "Transcribe Vocals"}</button>
         <button type="button" className="btn ghost" onClick={onInstrumental}>Mark as instrumental</button>
         <button type="button" className="btn ghost" onClick={onBack}>Back to Song</button>
       </div>
@@ -732,14 +732,205 @@ function UnderstandingStep({
   );
 }
 
-function LockedFutureStep({ title, message, onBack }: { title: string; message: string; onBack: () => void }) {
+function TreatmentStep({
+  plan,
+  busy,
+  onGenerate,
+  onReviewPlan,
+  onBack,
+}: {
+  plan: DirectorPlan | null;
+  busy: string | null;
+  onGenerate: () => void;
+  onReviewPlan: () => void;
+  onBack: () => void;
+}) {
   return (
     <section className="director-panel">
-      <div className="director-stage-card director-stage-approved">
-        <strong>{title}</strong>
-        <p>{message}</p>
+      <div className="director-section-heading">
+        <span className="director-step-number">4</span>
+        <div><h2>Professional Treatment</h2><p>Azure turns the approved song understanding into a production-ready visual concept and timed shot plan.</p></div>
       </div>
-      <button type="button" className="btn ghost" onClick={onBack}>Review approved foundation</button>
+      {plan?.planningBasis === "professional-treatment" ? (
+        <div className="director-stage-card director-stage-approved">
+          <strong>{plan.treatment.title}</strong>
+          <p>{plan.treatment.concept}</p>
+          <p><strong>Style:</strong> {plan.treatment.style}</p>
+          <p><strong>Pacing:</strong> {plan.treatment.pacing}</p>
+        </div>
+      ) : (
+        <div className="director-stage-card">
+          <strong>Ready to build the treatment</strong>
+          <p>This uses the approved Song Understanding, your Director Vision, and fixed music timing. It does not use the retired BPM-only planner.</p>
+        </div>
+      )}
+      <div className="director-action-row">
+        <button type="button" className="btn ghost" onClick={onBack}>Back to Understanding</button>
+        {plan?.planningBasis === "professional-treatment"
+          ? <button type="button" className="director-primary" onClick={onReviewPlan}>Review Shot Plan</button>
+          : <button type="button" className="director-primary" disabled={busy === "treatment"} onClick={onGenerate}>{busy === "treatment" ? "Building Treatment…" : "Build Professional Treatment"}</button>}
+      </div>
+    </section>
+  );
+}
+
+function PlanStep({
+  plan,
+  onApprove,
+  onBack,
+}: {
+  plan: DirectorPlan;
+  onApprove: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <section className="director-panel">
+      <div className="director-section-heading">
+        <span className="director-step-number">5</span>
+        <div><h2>Shot Plan</h2><p>{plan.shots.length} timed shots will become storyboard images and Agnes video takes.</p></div>
+      </div>
+      <div className="director-understanding-block">
+        {plan.shots.map((shot, index) => (
+          <div className="director-section-map-row" key={shot.id}>
+            <strong>{index + 1}. {formatTime(shot.start)}–{formatTime(shot.end)} · {shot.role}{shot.hero ? " · HERO" : ""}</strong>
+            <p>{shot.idea}</p>
+            <span>{shot.camera} · {shot.framing} · {shot.mood}</span>
+          </div>
+        ))}
+      </div>
+      <div className="director-approval-bar">
+        <button type="button" className="btn ghost" onClick={onBack}>Back to Treatment</button>
+        <button type="button" className="director-primary" onClick={onApprove}>{plan.approvedAt ? "Plan Approved" : "Approve Plan & Generate Images"}</button>
+      </div>
+    </section>
+  );
+}
+
+function ImagesStep({
+  plan,
+  busy,
+  onGenerate,
+  onContinue,
+  onBack,
+}: {
+  plan: DirectorPlan;
+  busy: string | null;
+  onGenerate: () => void;
+  onContinue: () => void;
+  onBack: () => void;
+}) {
+  const ready = plan.shots.filter((shot) => shot.imageStatus === "ready" && shot.imageUrl).length;
+  const allReady = ready === plan.shots.length;
+  return (
+    <section className="director-panel">
+      <div className="director-section-heading">
+        <span className="director-step-number">6</span>
+        <div><h2>Storyboard Images</h2><p>{ready}/{plan.shots.length} storyboard frames ready.</p></div>
+      </div>
+      <div className="director-understanding-grid">
+        {plan.shots.map((shot) => (
+          <div className="director-stage-card" key={shot.id}>
+            <strong>{shot.role} · {formatTime(shot.start)}–{formatTime(shot.end)}</strong>
+            {shot.imageUrl ? <img src={shot.imageUrl} alt={shot.role} style={{ width: "100%", borderRadius: 8 }} /> : <p>{shot.imageStatus === "failed" ? shot.imageError ?? "Image generation failed." : "Waiting for storyboard image."}</p>}
+          </div>
+        ))}
+      </div>
+      <div className="director-approval-bar">
+        <button type="button" className="btn ghost" onClick={onBack}>Back to Plan</button>
+        <button type="button" className="btn" disabled={busy === "images"} onClick={onGenerate}>{busy === "images" ? "Generating Images…" : ready ? "Generate Missing Images" : "Generate Storyboard Images"}</button>
+        <button type="button" className="director-primary" disabled={!allReady || busy === "images"} onClick={onContinue}>Approve Images & Generate Video</button>
+      </div>
+    </section>
+  );
+}
+
+function TakesStep({
+  plan,
+  clips,
+  allReady,
+  onGenerate,
+  onContinue,
+  onBack,
+}: {
+  plan: DirectorPlan;
+  clips: Clip[];
+  allReady: boolean;
+  onGenerate: () => void;
+  onContinue: () => void;
+  onBack: () => void;
+}) {
+  const readyCount = plan.shots.filter((shot) => clips.find((clip) => clip.id === shot.clipId)?.status === "ready").length;
+  const active = plan.shots.some((shot) => {
+    const status = clips.find((clip) => clip.id === shot.clipId)?.status;
+    return status === "queued" || status === "generating";
+  });
+  return (
+    <section className="director-panel">
+      <div className="director-section-heading">
+        <span className="director-step-number">7</span>
+        <div><h2>Agnes Video Takes</h2><p>{readyCount}/{plan.shots.length} generated video takes ready.</p></div>
+      </div>
+      <div className="director-understanding-block">
+        {plan.shots.map((shot) => {
+          const clip = clips.find((item) => item.id === shot.clipId);
+          return (
+            <div className="director-section-map-row" key={shot.id}>
+              <strong>{shot.role} · {formatTime(shot.start)}–{formatTime(shot.end)}</strong>
+              <span>Status: {clip?.status ?? "empty"}</span>
+              {clip?.lastError && <p>{clip.lastError}</p>}
+              {clip?.videoUrl && <video src={clip.videoUrl} controls muted playsInline style={{ width: "100%", maxWidth: 520 }} />}
+            </div>
+          );
+        })}
+      </div>
+      <div className="director-approval-bar">
+        <button type="button" className="btn ghost" onClick={onBack}>Back to Images</button>
+        <button type="button" className="btn" disabled={active} onClick={onGenerate}>{active ? "Agnes Generating…" : readyCount ? "Generate Missing Takes" : "Generate Agnes Video Takes"}</button>
+        <button type="button" className="director-primary" disabled={!allReady} onClick={onContinue}>Approve Takes & Final Edit</button>
+      </div>
+    </section>
+  );
+}
+
+function EditStep({
+  busy,
+  onRender,
+  onBack,
+}: {
+  busy: string | null;
+  onRender: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <section className="director-panel">
+      <div className="director-section-heading">
+        <span className="director-step-number">8</span>
+        <div><h2>Final Edit</h2><p>Combine the approved video takes with the original uploaded song as the final soundtrack.</p></div>
+      </div>
+      <div className="director-stage-card director-stage-approved">
+        <strong>Ready to render</strong>
+        <p>Generated clip audio is discarded. The original song remains the final music track.</p>
+      </div>
+      <div className="director-approval-bar">
+        <button type="button" className="btn ghost" onClick={onBack}>Back to Takes</button>
+        <button type="button" className="director-primary" disabled={busy === "render"} onClick={onRender}>{busy === "render" ? "Rendering…" : "Render Final Music Video"}</button>
+      </div>
+    </section>
+  );
+}
+
+function FinalStep({ url, onBack }: { url: string; onBack: () => void }) {
+  return (
+    <section className="director-panel">
+      <div className="director-section-heading">
+        <span className="director-step-number">9</span>
+        <div><h2>Final Video</h2><p>Your rendered music video is ready.</p></div>
+      </div>
+      <video src={url} controls playsInline style={{ width: "100%", maxWidth: 960 }} />
+      <div className="director-action-row">
+        <button type="button" className="btn ghost" onClick={onBack}>Back to Edit</button>
+        <a className="director-primary" href={url} target="_blank" rel="noreferrer">Open Final Video</a>
+      </div>
     </section>
   );
 }
