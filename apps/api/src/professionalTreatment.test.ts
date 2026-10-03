@@ -71,15 +71,24 @@ describe("generateProfessionalTreatment", () => {
 
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ "api-key": "azure-test" });
-      const body = JSON.parse(String(init?.body)) as { model: string };
+      const body = JSON.parse(String(init?.body)) as { model: string; input: Array<{ content: Array<{ text: string }> }> };
       expect(body.model).toBe("gpt-4.1-mini");
+      const directorPayload = JSON.parse(body.input[1]!.content[0]!.text);
+      expect(directorPayload.selectedVisualStyle).toContain("neo-noir");
+      expect(directorPayload.directorRequest).toContain("more performance");
       return new Response(JSON.stringify({
         output: [{ content: [{ type: "output_text", text: JSON.stringify(generated) }] }],
       }), { status: 200 });
     });
 
     const result = await generateProfessionalTreatment(
-      { analysis, understanding, vision: "artist performance in a night city" },
+      {
+        analysis,
+        understanding,
+        vision: "artist performance in a night city",
+        stylePrompt: "premium neo-noir with deep blacks and sculpted practical lighting",
+        directorRequest: "make the second half more performance-driven",
+      },
       {
         endpoint: "https://example.services.ai.azure.com/openai/v1/responses",
         apiKey: "azure-test",

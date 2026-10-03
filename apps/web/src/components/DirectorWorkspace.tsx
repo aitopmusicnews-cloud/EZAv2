@@ -40,6 +40,65 @@ const STEPS: Array<{ label: string; stage: DirectorStage }> = [
   { label: "9. Final", stage: "final" },
 ];
 
+const DIRECTOR_STYLES = [
+  {
+    id: "director-choice",
+    label: "Director Choice",
+    description: "Let BeatSync choose the strongest look for the song.",
+    prompt: "",
+  },
+  {
+    id: "cinematic-realism",
+    label: "Cinematic Realism",
+    description: "Premium film look, natural faces, motivated lighting, cinematic depth.",
+    prompt: "premium cinematic realism, natural skin texture, motivated practical lighting, cinematic lenses, controlled depth of field, believable production design",
+  },
+  {
+    id: "gritty-street",
+    label: "Gritty Street",
+    description: "Raw urban texture, handheld energy, practical locations.",
+    prompt: "gritty street music-video realism, raw urban texture, practical locations, handheld energy, available light mixed with hard practical lighting, authentic wardrobe and environments",
+  },
+  {
+    id: "neo-noir",
+    label: "Neo-Noir",
+    description: "Deep blacks, sculpted light, moody night photography.",
+    prompt: "premium neo-noir, deep blacks, sculpted practical lighting, selective highlights, moody night photography, controlled color contrast, cinematic shadows",
+  },
+  {
+    id: "high-fashion",
+    label: "High Fashion",
+    description: "Glossy editorial styling, precise composition, luxury lighting.",
+    prompt: "high-fashion editorial music video, luxury styling, precise composition, polished skin and wardrobe detail, studio-grade lighting, glossy premium finish",
+  },
+  {
+    id: "dreamlike",
+    label: "Dreamlike",
+    description: "Soft surrealism, expressive light, poetic visual transitions.",
+    prompt: "dreamlike cinematic surrealism, poetic imagery, expressive soft light, atmospheric haze, elegant visual transitions, emotionally symbolic environments",
+  },
+  {
+    id: "vintage-film",
+    label: "Vintage Film",
+    description: "Analog texture, period color, grain and imperfect optics.",
+    prompt: "vintage motion-picture aesthetic, organic film grain, subtle halation, period color response, imperfect vintage optics, tactile analog texture",
+  },
+  {
+    id: "performance",
+    label: "Performance",
+    description: "Artist-first coverage with strong hero framing and stage energy.",
+    prompt: "performance-driven music video, artist-first coverage, confident hero framing, dynamic performance lighting, strong closeups, medium performance coverage, energetic camera movement",
+  },
+  {
+    id: "art-house",
+    label: "Art House",
+    description: "Bold composition, symbolic imagery, unconventional visual language.",
+    prompt: "art-house music video, bold composition, symbolic imagery, unconventional camera language, sophisticated visual metaphors, gallery-quality production design",
+  },
+] as const;
+
+type DirectorStyleId = (typeof DIRECTOR_STYLES)[number]["id"];
+
 export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => void }) {
   const songId = useStore((s) => s.songId);
   const songFilename = useStore((s) => s.songFilename);
@@ -78,6 +137,9 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [officialLyrics, setOfficialLyrics] = useState("");
+  const [directorRequest, setDirectorRequest] = useState("");
+  const [selectedStyleId, setSelectedStyleId] = useState<DirectorStyleId>("director-choice");
+  const selectedStyle = DIRECTOR_STYLES.find((style) => style.id === selectedStyleId) ?? DIRECTOR_STYLES[0];
 
   const lockedCharacterId = productionBible?.characterReferenceAssetIds?.[0];
   const lockedCharacterAsset = lockedCharacterId
@@ -238,17 +300,28 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
       setError("Approve Song Understanding before generating the professional treatment.");
       return;
     }
-    setBusy("treatment");
+    const revising = Boolean(directorPlan);
+    const request = directorRequest.trim() || (revising && selectedStyle.prompt
+      ? "Apply the selected visual style to the current treatment and shot plan while preserving all other strong creative decisions."
+      : "");
+    setBusy(revising ? "revision" : "treatment");
     clearMessages();
-    setStatus("Building a production-ready treatment and shot plan with Azure…");
+    setStatus(revising ? "Director is revising the treatment and shot plan…" : "Building a production-ready treatment and shot plan with Azure…");
     try {
       const result = await requestProfessionalTreatment({
         analysis,
         understanding: songUnderstanding,
         vision: directorVision,
+        stylePrompt: selectedStyle.prompt,
+        directorRequest: request,
+        previousPlan: directorPlan ?? undefined,
+        previousProductionBible: productionBible ?? undefined,
       });
       applyProfessionalDirectorPlan(result.plan, result.productionBible);
-      setStatus("Professional treatment and shot plan are ready. Review the plan before generating images.");
+      setDirectorRequest("");
+      setStatus(revising
+        ? "Director revision applied. Review the updated shot plan."
+        : "Professional treatment and shot plan are ready. Review the plan before generating images.");
     } catch (err) {
       setStatus(null);
       setError(`Professional Treatment failed: ${getErrorMessage(err)}`);
@@ -456,6 +529,10 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
           <TreatmentStep
             plan={directorPlan}
             busy={busy}
+            selectedStyleId={selectedStyleId}
+            directorRequest={directorRequest}
+            onStyleChange={(styleId) => setSelectedStyleId(styleId)}
+            onDirectorRequest={setDirectorRequest}
             onGenerate={() => void buildProfessionalTreatment()}
             onReviewPlan={() => setDirectorStage("plan")}
             onBack={() => setDirectorStage("understanding")}
@@ -468,8 +545,12 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
             productionBible={productionBible}
             characterLockOptions={characterLockOptions}
             lockedCharacterUrl={lockedCharacterUrl}
+            directorRequest={directorRequest}
+            busy={busy}
             onLockedCharacter={setLockedCharacter}
             onCharacterProfile={(value) => updateDirectorBible({ characterProfile: value })}
+            onDirectorRequest={setDirectorRequest}
+            onRevise={() => void buildProfessionalTreatment()}
             onApprove={approvePlanAndContinue}
             onBack={() => setDirectorStage("treatment")}
           />
@@ -791,22 +872,34 @@ function UnderstandingStep({
 function TreatmentStep({
   plan,
   busy,
+  selectedStyleId,
+  directorRequest,
+  onStyleChange,
+  onDirectorRequest,
   onGenerate,
   onReviewPlan,
   onBack,
 }: {
   plan: DirectorPlan | null;
   busy: string | null;
+  selectedStyleId: DirectorStyleId;
+  directorRequest: string;
+  onStyleChange: (styleId: DirectorStyleId) => void;
+  onDirectorRequest: (value: string) => void;
   onGenerate: () => void;
   onReviewPlan: () => void;
   onBack: () => void;
 }) {
+  const isBusy = busy === "treatment" || busy === "revision";
   return (
     <section className="director-panel">
       <div className="director-section-heading">
         <span className="director-step-number">4</span>
-        <div><h2>Professional Treatment</h2><p>Azure turns the approved song understanding into a production-ready visual concept and timed shot plan.</p></div>
+        <div><h2>Professional Treatment</h2><p>Choose the visual language, then talk directly to the Director before or after the first treatment.</p></div>
       </div>
+
+      <DirectorStylePicker selectedStyleId={selectedStyleId} onSelect={onStyleChange} />
+
       {plan?.planningBasis === "professional-treatment" ? (
         <div className="director-stage-card director-stage-approved">
           <strong>{plan.treatment.title}</strong>
@@ -817,16 +910,90 @@ function TreatmentStep({
       ) : (
         <div className="director-stage-card">
           <strong>Ready to build the treatment</strong>
-          <p>This uses the approved Song Understanding, your Director Vision, and fixed music timing. It does not use the retired BPM-only planner.</p>
+          <p>This uses the approved Song Understanding, your Director Vision, selected style, and fixed music timing.</p>
         </div>
       )}
+
+      <DirectorRequestBox
+        value={directorRequest}
+        onChange={onDirectorRequest}
+        busy={isBusy}
+        hasPlan={Boolean(plan)}
+        onSend={onGenerate}
+      />
+
       <div className="director-action-row">
         <button type="button" className="btn ghost" onClick={onBack}>Back to Understanding</button>
-        {plan?.planningBasis === "professional-treatment"
-          ? <button type="button" className="director-primary" onClick={onReviewPlan}>Review Shot Plan</button>
-          : <button type="button" className="director-primary" disabled={busy === "treatment"} onClick={onGenerate}>{busy === "treatment" ? "Building Treatment…" : "Build Professional Treatment"}</button>}
+        {plan?.planningBasis === "professional-treatment" && (
+          <button type="button" className="director-primary" onClick={onReviewPlan}>Review Shot Plan</button>
+        )}
       </div>
     </section>
+  );
+}
+
+function DirectorStylePicker({
+  selectedStyleId,
+  onSelect,
+}: {
+  selectedStyleId: DirectorStyleId;
+  onSelect: (styleId: DirectorStyleId) => void;
+}) {
+  return (
+    <div className="director-style-section">
+      <div className="director-subheading">
+        <div><h3>Style Picker</h3><p>Pick the production look the Director should follow.</p></div>
+      </div>
+      <div className="director-style-grid">
+        {DIRECTOR_STYLES.map((style) => (
+          <button
+            type="button"
+            key={style.id}
+            className={`director-style-card${selectedStyleId === style.id ? " selected" : ""}`}
+            onClick={() => onSelect(style.id)}
+          >
+            <strong>{style.label}</strong>
+            <span>{style.description}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DirectorRequestBox({
+  value,
+  onChange,
+  busy,
+  hasPlan,
+  onSend,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  busy: boolean;
+  hasPlan: boolean;
+  onSend: () => void;
+}) {
+  return (
+    <div className="director-request-box">
+      <div className="director-subheading">
+        <div>
+          <h3>Talk to Director</h3>
+          <p>{hasPlan ? "Tell BeatSync what to change. It will revise the current treatment and full shot plan." : "Give the Director extra instructions before the first treatment."}</p>
+        </div>
+      </div>
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Example: Make shots 4–6 darker and more performance-driven. Keep the lead character and location, remove the dancers, and use tighter camera coverage."
+      />
+      <div className="director-request-actions">
+        <small>Timing, approved song meaning, and locked references remain protected.</small>
+        <button type="button" className="director-primary" disabled={busy} onClick={onSend}>
+          {busy ? "Director Working…" : hasPlan ? "Send Edit & Revise" : "Build Treatment"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -835,8 +1002,12 @@ function PlanStep({
   productionBible,
   characterLockOptions,
   lockedCharacterUrl,
+  directorRequest,
+  busy,
   onLockedCharacter,
   onCharacterProfile,
+  onDirectorRequest,
+  onRevise,
   onApprove,
   onBack,
 }: {
@@ -844,8 +1015,12 @@ function PlanStep({
   productionBible: ProductionBible | null;
   characterLockOptions: string[];
   lockedCharacterUrl: string;
+  directorRequest: string;
+  busy: string | null;
   onLockedCharacter: (url: string) => void;
   onCharacterProfile: (value: string) => void;
+  onDirectorRequest: (value: string) => void;
+  onRevise: () => void;
   onApprove: () => void;
   onBack: () => void;
 }) {
@@ -882,6 +1057,13 @@ function PlanStep({
         />
         <small>The locked image controls identity. This text adds direction but cannot override Character Lock.</small>
       </label>
+      <DirectorRequestBox
+        value={directorRequest}
+        onChange={onDirectorRequest}
+        busy={busy === "revision" || busy === "treatment"}
+        hasPlan
+        onSend={onRevise}
+      />
       <div className="director-understanding-block">
         {plan.shots.map((shot, index) => (
           <div className="director-section-map-row" key={shot.id}>

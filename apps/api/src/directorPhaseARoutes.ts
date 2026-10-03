@@ -3,6 +3,8 @@ import { z } from "zod";
 import {
   AlignOfficialLyricsRequest,
   AudioAnalysis,
+  DirectorPlan,
+  ProductionBible,
   SongUnderstanding,
   SongUnderstandingRequest,
   TranscribeSongRequest,
@@ -92,6 +94,10 @@ export async function directorPhaseARoutes(app: FastifyInstance, options: Direct
     analysis: AudioAnalysis,
     understanding: SongUnderstanding,
     vision: z.string().max(4000).default(""),
+    stylePrompt: z.string().max(2000).default(""),
+    directorRequest: z.string().max(4000).default(""),
+    previousPlan: DirectorPlan.optional(),
+    previousProductionBible: ProductionBible.optional(),
   });
 
   app.post("/api/director/treatment", { config: { rateLimit: { max: 4, timeWindow: "1 minute" } } }, async (req, reply) => {
