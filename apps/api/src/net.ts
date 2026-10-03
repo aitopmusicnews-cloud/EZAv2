@@ -34,7 +34,7 @@ export async function assertSafeHost(url: string): Promise<void> {
   }
 }
 
-function isPrivateIp(addr: string): boolean {
+export function isPrivateIp(addr: string): boolean {
   const v = isIP(addr);
   if (v === 4) return isPrivateIpv4(addr);
   if (v === 6) return isPrivateIpv6(addr);
