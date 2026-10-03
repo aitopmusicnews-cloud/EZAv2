@@ -2,35 +2,39 @@ import { describe, expect, it, vi } from "vitest";
 import { AzureTranscriptionProvider, resolveAzureTranscriptionApiKey } from "./azureTranscription.js";
 
 describe("AzureTranscriptionProvider", () => {
-  it("uses one Azure Whisper request for lyric text plus word/segment timing", async () => {
+  it("uses one Azure Speech fast transcription request for lyric text plus timing", async () => {
     const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       expect(String(url)).toBe(
-        "https://ezvids-resource.openai.azure.com/openai/deployments/whisper/audio/transcriptions?api-version=2025-04-01-preview",
+        "https://ezvids-resource.cognitiveservices.azure.com/speechtotext/transcriptions:transcribe?api-version=2025-10-15",
       );
-      expect(init?.headers).toMatchObject({ "api-key": "azure-test" });
-      expect((init?.headers as Record<string, string>)?.Authorization).toBeUndefined();
+      expect(init?.headers).toMatchObject({ "Ocp-Apim-Subscription-Key": "azure-test" });
 
       const body = init?.body as FormData;
-      expect(body.get("response_format")).toBe("verbose_json");
-      expect(body.getAll("timestamp_granularities[]")).toEqual(["word", "segment"]);
+      expect(body.get("audio")).toBeTruthy();
+      expect(JSON.parse(String(body.get("definition")))).toEqual({ locales: [] });
 
       return new Response(JSON.stringify({
-        text: "I know where I'm going",
-        language: "en",
-        words: [
-          { word: "I", start: 1, end: 1.2 },
-          { word: "know", start: 1.2, end: 1.5 },
-          { word: "where", start: 1.5, end: 1.9 },
-          { word: "I'm", start: 1.9, end: 2.1 },
-          { word: "going", start: 2.1, end: 2.6 },
-        ],
-        segments: [{ start: 1, end: 2.6, text: "I know where I'm going" }],
+        durationMilliseconds: 2600,
+        combinedPhrases: [{ text: "I know where I'm going" }],
+        phrases: [{
+          offsetMilliseconds: 1000,
+          durationMilliseconds: 1600,
+          text: "I know where I'm going",
+          locale: "en-US",
+          words: [
+            { text: "I", offsetMilliseconds: 1000, durationMilliseconds: 200 },
+            { text: "know", offsetMilliseconds: 1200, durationMilliseconds: 300 },
+            { text: "where", offsetMilliseconds: 1500, durationMilliseconds: 400 },
+            { text: "I'm", offsetMilliseconds: 1900, durationMilliseconds: 200 },
+            { text: "going", offsetMilliseconds: 2100, durationMilliseconds: 500 },
+          ],
+        }],
       }), { status: 200 });
     });
 
     const provider = new AzureTranscriptionProvider({
       apiKey: "azure-test",
-      endpoint: "https://ezvids-resource.openai.azure.com/openai/deployments/whisper/audio/transcriptions?api-version=2025-04-01-preview",
+      endpoint: "https://ezvids-resource.cognitiveservices.azure.com/speechtotext/transcriptions:transcribe?api-version=2025-10-15",
       fetchImpl: fetchImpl as typeof fetch,
     });
     const result = await provider.transcribe({
@@ -41,21 +45,21 @@ describe("AzureTranscriptionProvider", () => {
 
     expect(result.source).toBe("transcription");
     expect(result.rawText).toBe("I know where I'm going");
-    expect(result.language).toBe("en");
+    expect(result.language).toBe("en-US");
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
 
   it("reuses the main Azure resource key when no transcription-specific key is set", () => {
-    expect(resolveAzureTranscriptionApiKey(undefined, "main-azure-key")).toBe("main-azure-key");
+    expect(resolveAzureTranscriptionApiKey(undefined, undefined, "main-azure-key")).toBe("main-azure-key");
   });
 
-  it("returns a clear deployment error instead of exposing provider internals", async () => {
+  it("returns a clear Azure Speech auth error", async () => {
     const provider = new AzureTranscriptionProvider({
       apiKey: "azure-test",
-      endpoint: "https://example.openai.azure.com/openai/deployments/whisper/audio/transcriptions?api-version=2025-04-01-preview",
+      endpoint: "https://ezvids-resource.cognitiveservices.azure.com/speechtotext/transcriptions:transcribe?api-version=2025-10-15",
       fetchImpl: vi.fn(async () => new Response(
-        JSON.stringify({ error: { message: "The API deployment for this resource does not exist." } }),
-        { status: 404 },
+        JSON.stringify({ error: { message: "Access denied." } }),
+        { status: 401 },
       )) as typeof fetch,
     });
 
@@ -63,6 +67,6 @@ describe("AzureTranscriptionProvider", () => {
       buffer: Buffer.from("audio"),
       filename: "song.mp3",
       mimeType: "audio/mpeg",
-    })).rejects.toThrow(/deployment 'whisper' was not found/i);
+    })).rejects.toThrow(/Azure Speech transcription authentication failed/i);
   });
 });
