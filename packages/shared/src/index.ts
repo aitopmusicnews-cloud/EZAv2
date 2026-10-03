@@ -450,3 +450,4 @@ export interface Task {
   error?: string;
   errorCode?: string;
 }
+export * from "./promoDirector.js";

@@ -2,7 +2,7 @@ import { join, resolve } from "node:path";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { paths, storage } from "./storage.js";
 import { config } from "./config.js";
-import { runFfmpeg } from "./ffmpeg.js";
+import { runFfmpeg, probeDuration } from "./ffmpeg.js";
 import { assertSafeHost } from "./net.js";
 import { resolveLocalPath } from "./paths.js";
 
@@ -155,6 +155,13 @@ export async function renderPromo(req: PromoRenderRequest): Promise<{ url: strin
     throw new Error("promo scene durations must add up to the project duration");
   }
 
+  // Check the actual audio, including manually uploaded narration, before
+  // spending time on scene encodes. Never silently cut off the final words.
+  const voiceInput = req.voiceoverUrl ? await resolveInput(req.voiceoverUrl) : null;
+  if (voiceInput && await probeDuration(voiceInput) > req.duration + 0.1) {
+    throw new Error("Voiceover is longer than the edit. Extend the scenes or shorten the narration before exporting.");
+  }
+
   await mkdir(paths.RENDERS, { recursive: true });
   const outputName = `${req.projectId}-promo.mp4`;
   const outputPath = join(paths.RENDERS, outputName);
@@ -233,7 +240,7 @@ export async function renderPromo(req: PromoRenderRequest): Promise<{ url: strin
       ? 1 + (req.musicUrl ? 1 : 0)
       : null;
     if (req.voiceoverUrl) {
-      inputs.push("-i", await resolveInput(req.voiceoverUrl));
+      inputs.push("-i", voiceInput!);
     }
 
     let videoLabel = "promo";
@@ -311,7 +318,12 @@ export async function renderPromo(req: PromoRenderRequest): Promise<{ url: strin
       outputPath,
     ]);
 
-  const { publicUrl } = await storage.saveRender(outputPath, outputName, "video/mp4");
+    const actualDuration = await probeDuration(outputPath);
+    if (Math.abs(actualDuration - req.duration) > 0.2) throw new Error("Export duration does not match the edit. Please retry the render.");
+    // Decode both streams before publishing the export URL; this catches
+    // broken/truncated encodes, not subjective visual or advertising quality.
+    await runFfmpeg(["-v", "error", "-xerror", "-i", outputPath, "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "-"], 120_000);
+    const { publicUrl } = await storage.saveRender(outputPath, outputName, "video/mp4");
     if (config.STORAGE_BACKEND === "s3") {
       await unlink(outputPath).catch(() => {});
     }
