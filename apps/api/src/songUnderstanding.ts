@@ -94,7 +94,13 @@ function extractOutputText(payload: unknown): string | null {
 }
 
 function normalizedText(value: string): string {
-  return value.toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, " ").trim();
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export async function generateSongUnderstanding(
@@ -149,10 +155,19 @@ export async function generateSongUnderstanding(
 
   if (expectedBasis === "lyrics+music") {
     const source = normalizedText(request.lyrics.rawText);
-    for (const moment of result.keyLyricMoments) {
-      if (!source.includes(normalizedText(moment.lyric))) {
-        throw new Error(`Song Understanding quoted lyric text that is not present in the approved lyrics: ${moment.lyric}`);
-      }
+    const groundedMoments = result.keyLyricMoments.filter((moment) => {
+      const quote = normalizedText(moment.lyric);
+      return Boolean(quote) && source.includes(quote);
+    });
+    if (groundedMoments.length !== result.keyLyricMoments.length) {
+      return SongUnderstanding.parse({
+        ...result,
+        keyLyricMoments: groundedMoments,
+        uncertaintyNotes: [
+          ...result.uncertaintyNotes,
+          "One or more model-selected lyric moments were omitted because the quoted text could not be matched to the approved lyrics.",
+        ],
+      });
     }
   } else if (result.keyLyricMoments.length) {
     throw new Error("Instrumental Song Understanding cannot contain lyric moments.");
