@@ -7,6 +7,7 @@ import {
   type DirectorStage,
   type LyricDocument,
   type ProductionBible,
+  type ReferenceAsset,
   type SongUnderstanding,
 } from "@mvs/shared";
 import { uploadSong } from "../lib/api.js";
@@ -50,6 +51,9 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
   const songUnderstanding = useStore((s) => s.songUnderstanding);
   const directorPlan = useStore((s) => s.directorPlan);
   const productionBible = useStore((s) => s.productionBible);
+  const characterImageUrl = useStore((s) => s.characterImageUrl);
+  const lookbook = useStore((s) => s.lookbook);
+  const referenceAssets = useStore((s) => s.referenceAssets);
   const clips = useStore((s) => s.clips);
   const directorFinalUrl = useStore((s) => s.directorFinalUrl);
 
@@ -67,12 +71,46 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
   const applyProfessionalDirectorPlan = useStore((s) => s.applyProfessionalDirectorPlan);
   const approveDirectorPlan = useStore((s) => s.approveDirectorPlan);
   const updateDirectorBible = useStore((s) => s.updateDirectorBible);
+  const upsertReferenceAsset = useStore((s) => s.upsertReferenceAsset);
 
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [officialLyrics, setOfficialLyrics] = useState("");
+
+  const lockedCharacterId = productionBible?.characterReferenceAssetIds?.[0];
+  const lockedCharacterAsset = lockedCharacterId
+    ? referenceAssets.find((asset) => asset.id === lockedCharacterId)
+    : referenceAssets.find((asset) => asset.role === "character" && asset.locked === true);
+  const lockedCharacterUrl = lockedCharacterAsset?.url ?? "";
+  const characterLockOptions = Array.from(new Set([
+    characterImageUrl,
+    ...lookbook,
+    ...referenceAssets.filter((asset) => asset.role === "character").map((asset) => asset.url),
+  ].filter((value): value is string => Boolean(value))));
+
+  const setLockedCharacter = (url: string) => {
+    if (!url) {
+      updateDirectorBible({ characterReferenceAssetIds: [] });
+      return;
+    }
+    let asset = referenceAssets.find((item) => item.role === "character" && item.url === url);
+    if (!asset) {
+      asset = {
+        id: `ref-character-${crypto.randomUUID().slice(0, 8)}`,
+        url,
+        role: "character",
+        locked: true,
+        name: "Locked character",
+      } satisfies ReferenceAsset;
+      upsertReferenceAsset(asset);
+    } else if (asset.locked !== true) {
+      asset = { ...asset, locked: true };
+      upsertReferenceAsset(asset);
+    }
+    updateDirectorBible({ characterReferenceAssetIds: [asset.id] });
+  };
 
   const clearMessages = () => {
     setError(null);
@@ -418,6 +456,9 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
           <PlanStep
             plan={directorPlan}
             productionBible={productionBible}
+            characterLockOptions={characterLockOptions}
+            lockedCharacterUrl={lockedCharacterUrl}
+            onLockedCharacter={setLockedCharacter}
             onCharacterProfile={(value) => updateDirectorBible({ characterProfile: value })}
             onApprove={approvePlanAndContinue}
             onBack={() => setDirectorStage("treatment")}
@@ -782,12 +823,18 @@ function TreatmentStep({
 function PlanStep({
   plan,
   productionBible,
+  characterLockOptions,
+  lockedCharacterUrl,
+  onLockedCharacter,
   onCharacterProfile,
   onApprove,
   onBack,
 }: {
   plan: DirectorPlan;
   productionBible: ProductionBible | null;
+  characterLockOptions: string[];
+  lockedCharacterUrl: string;
+  onLockedCharacter: (url: string) => void;
   onCharacterProfile: (value: string) => void;
   onApprove: () => void;
   onBack: () => void;
@@ -798,14 +845,32 @@ function PlanStep({
         <span className="director-step-number">5</span>
         <div><h2>Shot Plan</h2><p>{plan.shots.length} timed shots will become storyboard images and Agnes video takes.</p></div>
       </div>
+      <div className="director-character-lock">
+        <label className="director-field">
+          <span>Character Lock Reference</span>
+          <select value={lockedCharacterUrl} onChange={(event) => onLockedCharacter(event.target.value)}>
+            <option value="">No locked character</option>
+            {characterLockOptions.map((url, index) => (
+              <option value={url} key={url}>Character reference {index + 1}</option>
+            ))}
+          </select>
+          <small>This uses the app's existing Character Lock. The selected image becomes the identity source for every storyboard frame and Agnes take.</small>
+        </label>
+        {lockedCharacterUrl && (
+          <div className="director-character-lock-preview">
+            <img src={lockedCharacterUrl} alt="Locked character reference" />
+            <strong>Character Lock active</strong>
+          </div>
+        )}
+      </div>
       <label className="director-field">
-        <span>Cast / Character Lock</span>
+        <span>Character Direction</span>
         <textarea
           value={productionBible?.characterProfile ?? ""}
           onChange={(event) => onCharacterProfile(event.target.value)}
-          placeholder="Director-defined cast identity and continuity for this video."
+          placeholder="Supporting direction for wardrobe, presentation, role, and continuity."
         />
-        <small>The storyboard must follow this cast direction instead of choosing a new default look for each project or shot.</small>
+        <small>The locked image controls identity. This text adds direction but cannot override Character Lock.</small>
       </label>
       <div className="director-understanding-block">
         {plan.shots.map((shot, index) => (
