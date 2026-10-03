@@ -66,7 +66,7 @@ function compileCore(input: PromptCompileInput): string {
 
   const characterRefs = lockedRefs(input.referenceAssets, "character");
   const characterText = [
-    characterRefs.length ? "Match the locked character reference image(s) exactly; treat them as identity references, not general inspiration." : "",
+    characterRefs.length ? "CHARACTER LOCK IS AUTHORITATIVE. Match the locked character reference image(s) exactly; treat them as identity references, not general inspiration. Preserve face, skin tone, hair, build, age appearance, and other identity markers. If any written character description conflicts with the locked reference image, the locked reference image wins." : "",
     input.productionBible?.characterProfile ?? "",
   ].filter(Boolean).join(" ");
   if (characterText) sections.push(`[CHARACTER LOCK]\n${characterText}`);
