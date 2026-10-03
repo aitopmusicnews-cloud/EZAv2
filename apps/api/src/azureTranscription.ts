@@ -16,23 +16,43 @@ type ProviderOptions = {
   fetchImpl?: typeof fetch;
 };
 
-type AzureTimingResponse = {
+type SpeechWord = {
   text?: string;
-  language?: string;
-  words?: Array<{ word?: string; text?: string; start?: number; end?: number }>;
-  segments?: Array<{ text?: string; start?: number; end?: number }>;
+  offsetMilliseconds?: number;
+  durationMilliseconds?: number;
 };
 
-export function resolveAzureTranscriptionApiKey(transcriptionKey?: string, mainKey?: string): string {
-  return transcriptionKey?.trim() || mainKey?.trim() || "";
+type SpeechPhrase = {
+  text?: string;
+  offsetMilliseconds?: number;
+  durationMilliseconds?: number;
+  locale?: string;
+  words?: SpeechWord[];
+};
+
+type AzureSpeechResponse = {
+  combinedPhrases?: Array<{ text?: string }>;
+  phrases?: SpeechPhrase[];
+};
+
+export function resolveAzureTranscriptionApiKey(
+  speechKey?: string,
+  transcriptionKey?: string,
+  mainKey?: string,
+): string {
+  return speechKey?.trim() || transcriptionKey?.trim() || mainKey?.trim() || "";
 }
 
 async function safeProviderError(response: Response): Promise<string> {
   const text = await response.text();
   try {
-    const parsed = JSON.parse(text) as { error?: { message?: string } | string };
+    const parsed = JSON.parse(text) as {
+      error?: { message?: string; code?: string } | string;
+      message?: string;
+    };
     if (typeof parsed.error === "string") return parsed.error;
     if (parsed.error?.message) return parsed.error.message;
+    if (parsed.message) return parsed.message;
   } catch {}
   return text.slice(0, 500) || response.statusText;
 }
@@ -44,53 +64,81 @@ export class AzureTranscriptionProvider implements TranscriptionProvider {
 
   constructor(options: ProviderOptions = {}) {
     this.apiKey = options.apiKey ?? resolveAzureTranscriptionApiKey(
+      config.AZURE_SPEECH_API_KEY,
       config.AZURE_OPENAI_TRANSCRIPTION_API_KEY,
       config.AZURE_OPENAI_MAIN_API_KEY,
     );
-    this.endpoint = options.endpoint ?? config.AZURE_OPENAI_TRANSCRIPTION_ENDPOINT;
+    this.endpoint = options.endpoint ?? config.AZURE_SPEECH_TRANSCRIPTION_ENDPOINT;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
   async transcribe(input: { buffer: Buffer; filename: string; mimeType: string }): Promise<LyricDocument> {
     if (!this.apiKey || !this.endpoint) {
-      throw new Error("Azure automatic lyric transcription is not configured.");
+      throw new Error("Azure Speech automatic lyric transcription is not configured.");
     }
 
     const form = new FormData();
-    form.append("file", new Blob([new Uint8Array(input.buffer)], { type: input.mimeType }), input.filename);
-    form.append("response_format", "verbose_json");
-    form.append("timestamp_granularities[]", "word");
-    form.append("timestamp_granularities[]", "segment");
+    form.append("audio", new Blob([new Uint8Array(input.buffer)], { type: input.mimeType }), input.filename);
+    form.append("definition", JSON.stringify({ locales: [] }));
 
     const response = await this.fetchImpl(this.endpoint, {
       method: "POST",
-      headers: { "api-key": this.apiKey },
+      headers: { "Ocp-Apim-Subscription-Key": this.apiKey },
       body: form,
     });
+
     if (!response.ok) {
       const detail = await safeProviderError(response);
-      if (response.status === 404 && /deployment|resource|not found/i.test(detail)) {
-        throw new Error("Azure transcription deployment 'whisper' was not found. Deploy Whisper in the ezvids-resource Azure OpenAI resource with deployment name 'whisper'.");
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(`Azure Speech transcription authentication failed (${response.status}). Verify ezvids-resource is a Speech or multi-service Foundry resource and that its resource key is configured. ${detail}`);
       }
-      throw new Error(`Azure transcription request failed (${response.status}): ${detail}`);
+      if (response.status === 404) {
+        throw new Error(`Azure Speech fast transcription endpoint was not found for ezvids-resource. ${detail}`);
+      }
+      throw new Error(`Azure Speech transcription request failed (${response.status}): ${detail}`);
     }
 
-    const timing = await response.json() as AzureTimingResponse;
-    const accurateText = timing.text?.trim() || "";
-    if (!accurateText) throw new Error("Azure transcription returned no lyric text.");
+    const result = await response.json() as AzureSpeechResponse;
+    const phrases = result.phrases ?? [];
+    const accurateText = (result.combinedPhrases ?? [])
+      .map((phrase) => phrase.text?.trim())
+      .filter(Boolean)
+      .join("\n")
+      .trim() || phrases.map((phrase) => phrase.text?.trim()).filter(Boolean).join("\n").trim();
 
-    const timedWords: ProviderTimedWord[] = (timing.words ?? [])
-      .filter((word) => typeof word.start === "number" && typeof word.end === "number" && Boolean(word.word ?? word.text))
-      .map((word) => ({ text: String(word.word ?? word.text), start: word.start!, end: word.end! }));
-    const timedSegments: ProviderTimedSegment[] = (timing.segments ?? [])
-      .filter((segment) => typeof segment.start === "number" && typeof segment.end === "number" && Boolean(segment.text))
-      .map((segment) => ({ text: String(segment.text), start: segment.start!, end: segment.end! }));
+    if (!accurateText) throw new Error("Azure Speech transcription returned no lyric text.");
+
+    const timedWords: ProviderTimedWord[] = phrases.flatMap((phrase) =>
+      (phrase.words ?? [])
+        .filter((word) =>
+          typeof word.offsetMilliseconds === "number" &&
+          typeof word.durationMilliseconds === "number" &&
+          Boolean(word.text),
+        )
+        .map((word) => ({
+          text: String(word.text),
+          start: word.offsetMilliseconds! / 1000,
+          end: (word.offsetMilliseconds! + word.durationMilliseconds!) / 1000,
+        })),
+    );
+
+    const timedSegments: ProviderTimedSegment[] = phrases
+      .filter((phrase) =>
+        typeof phrase.offsetMilliseconds === "number" &&
+        typeof phrase.durationMilliseconds === "number" &&
+        Boolean(phrase.text),
+      )
+      .map((phrase) => ({
+        text: String(phrase.text),
+        start: phrase.offsetMilliseconds! / 1000,
+        end: (phrase.offsetMilliseconds! + phrase.durationMilliseconds!) / 1000,
+      }));
 
     if (!timedWords.length && !timedSegments.length) {
-      throw new Error("Azure transcription returned text but no timing information.");
+      throw new Error("Azure Speech transcription returned text but no timing information.");
     }
 
     const document = reconcileAccurateTextWithTiming(accurateText, timedWords, timedSegments);
-    return { ...document, language: timing.language };
+    return { ...document, language: phrases.find((phrase) => phrase.locale)?.locale };
   }
 }
