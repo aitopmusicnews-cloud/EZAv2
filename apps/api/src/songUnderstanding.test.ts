@@ -44,6 +44,59 @@ describe("generateSongUnderstanding", () => {
     expect(result.uncertaintyNotes).toEqual(["destination is not specified"]);
   });
 
+  it("accepts grounded lyric quotes despite punctuation and apostrophe differences", async () => {
+    const request = vocalRequest();
+    request.lyrics.rawText = "Chrome Hearts on the dashboard, heavy with the payload. I don’t follow rules.";
+    const understanding = {
+      ...validUnderstanding,
+      keyLyricMoments: [{
+        start: 1,
+        end: 3,
+        lyric: "chrome hearts on the dashboard heavy with the payload I don't follow rules",
+        meaning: "a confident statement",
+        visualOpportunity: "performance emphasis",
+        confidence: "high",
+      }],
+    };
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(understanding) }] }],
+    }), { status: 200 }));
+
+    const result = await generateSongUnderstanding(request, {
+      apiKey: "test",
+      model: "gpt-5.6",
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+
+    expect(result.keyLyricMoments).toHaveLength(1);
+  });
+
+  it("drops an ungrounded lyric moment instead of failing the whole Song Understanding", async () => {
+    const understanding = {
+      ...validUnderstanding,
+      keyLyricMoments: [{
+        start: 1,
+        end: 3,
+        lyric: "this lyric was never supplied",
+        meaning: "invented",
+        visualOpportunity: "none",
+        confidence: "low",
+      }],
+    };
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(understanding) }] }],
+    }), { status: 200 }));
+
+    const result = await generateSongUnderstanding(vocalRequest(), {
+      apiKey: "test",
+      model: "gpt-5.6",
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+
+    expect(result.keyLyricMoments).toEqual([]);
+    expect(result.uncertaintyNotes.at(-1)).toMatch(/omitted/i);
+  });
+
   it("uses Azure Responses endpoint and api-key auth when configured", async () => {
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ "api-key": "azure-test" });
