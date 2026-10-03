@@ -18,9 +18,12 @@ describe("Professional Director Phase A UI contract", () => {
     expect(source).toContain("Uncertainties");
   });
 
-  it("retires the old heuristic plan button from the guided workflow", () => {
+  it("uses the professional treatment production flow instead of the old heuristic planner", () => {
     expect(source).not.toContain(">Create Video Plan<");
-    expect(source).toContain("Professional Treatment is the next implementation phase");
+    expect(source).toContain("Build Professional Treatment");
+    expect(source).toContain("Generate Storyboard Images");
+    expect(source).toContain("Generate Agnes Video Takes");
+    expect(source).toContain("Render Final Music Video");
     expect(source).toContain("Advanced Editor");
   });
 });
