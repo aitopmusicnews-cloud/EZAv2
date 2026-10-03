@@ -17,7 +17,7 @@ const Env = z.object({
   AZURE_OPENAI_MAIN_ENDPOINT: optionalUrl.optional(),
   AZURE_OPENAI_MAIN_API_KEY: optionalNonEmpty.optional(),
   AZURE_OPENAI_MAIN_DEPLOYMENT: z.string().min(1).default("gpt-4.1-mini"),
-  AZURE_OPENAI_TTS_ENDPOINT: optionalUrl.optional(),
+  AZURE_OPENAI_TTS_ENDPOINT: z.string().url().default("https://ezvids-resource.openai.azure.com/openai/deployments/gpt-4o-mini-tts/audio/speech?api-version=2025-03-01-preview"),
   AZURE_OPENAI_TTS_API_KEY: optionalNonEmpty.optional(),
   AZURE_OPENAI_TTS_DEPLOYMENT: z.string().min(1).default("gpt-4o-mini-tts"),
   AZURE_OPENAI_TTS_VOICE: z.string().min(1).default("alloy"),
@@ -81,8 +81,8 @@ if (!config.OPENAI_API_KEY) {
 if (!config.AZURE_OPENAI_MAIN_API_KEY || !config.AZURE_OPENAI_MAIN_ENDPOINT) {
   console.warn("WARN: Azure OpenAI main model is not configured. Song Understanding will fall back to OPENAI_API_KEY when available.");
 }
-if (!config.AZURE_OPENAI_TTS_API_KEY || !config.AZURE_OPENAI_TTS_ENDPOINT) {
-  console.warn("WARN: Azure OpenAI TTS is not configured. Promo voiceover generation is offline.");
+if (!(config.AZURE_OPENAI_TTS_API_KEY || config.AZURE_OPENAI_MAIN_API_KEY)) {
+  console.warn("WARN: Azure OpenAI TTS has no resource key. Promo voiceover generation is offline.");
 }
 if (config.STORAGE_BACKEND === "s3") {
   if (!config.S3_BUCKET || !config.S3_REGION) {
