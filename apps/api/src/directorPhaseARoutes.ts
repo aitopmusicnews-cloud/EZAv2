@@ -10,12 +10,13 @@ import {
 import { config } from "./config.js";
 import { prepareTranscriptionAudio } from "./transcriptionAudio.js";
 import { alignOfficialLyrics } from "./lyricAlignment.js";
-import { OpenAITranscriptionProvider, type TranscriptionProvider } from "./openaiTranscription.js";
+import { AzureTranscriptionProvider, type TranscriptionProvider } from "./azureTranscription.js";
 import { generateSongUnderstanding } from "./songUnderstanding.js";
 import { generateProfessionalTreatment } from "./professionalTreatment.js";
 
 export type DirectorPhaseADeps = {
   openAIConfigured: () => boolean;
+  transcriptionConfigured?: () => boolean;
   understandingConfigured?: () => boolean;
   prepareAudio: typeof prepareTranscriptionAudio;
   transcriptionProvider: Pick<TranscriptionProvider, "transcribe">;
@@ -29,11 +30,15 @@ export type DirectorPhaseARouteOptions = { deps?: DirectorPhaseADeps };
 export function createDefaultDirectorPhaseADeps(): DirectorPhaseADeps {
   return {
     openAIConfigured: () => Boolean(config.OPENAI_API_KEY),
+    transcriptionConfigured: () => Boolean(
+      config.AZURE_OPENAI_TRANSCRIPTION_ENDPOINT &&
+      (config.AZURE_OPENAI_TRANSCRIPTION_API_KEY || config.AZURE_OPENAI_MAIN_API_KEY)
+    ),
     understandingConfigured: () => Boolean(
       (config.AZURE_OPENAI_MAIN_ENDPOINT && config.AZURE_OPENAI_MAIN_API_KEY) || config.OPENAI_API_KEY
     ),
     prepareAudio: prepareTranscriptionAudio,
-    transcriptionProvider: new OpenAITranscriptionProvider(),
+    transcriptionProvider: new AzureTranscriptionProvider(),
     alignOfficialLyrics,
     generateUnderstanding: generateSongUnderstanding,
     generateTreatment: generateProfessionalTreatment,
@@ -44,8 +49,9 @@ export async function directorPhaseARoutes(app: FastifyInstance, options: Direct
   const deps = options.deps ?? createDefaultDirectorPhaseADeps();
 
   app.post("/api/director/transcribe", { config: { rateLimit: { max: 4, timeWindow: "1 minute" } } }, async (req, reply) => {
-    if (!deps.openAIConfigured()) {
-      return reply.code(503).send({ error: "Automatic lyric transcription is not configured. Paste official lyrics or configure OPENAI_API_KEY." });
+    const transcriptionConfigured = deps.transcriptionConfigured ?? deps.openAIConfigured;
+    if (!transcriptionConfigured()) {
+      return reply.code(503).send({ error: "Azure automatic lyric transcription is not configured. Paste official lyrics or deploy/configure Azure Whisper." });
     }
     const parsed = TranscribeSongRequest.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues.map((issue) => issue.message).join("; ") });
