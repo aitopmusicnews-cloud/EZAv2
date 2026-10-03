@@ -6,6 +6,7 @@ import {
   type DirectorPlan,
   type DirectorStage,
   type LyricDocument,
+  type ProductionBible,
   type SongUnderstanding,
 } from "@mvs/shared";
 import { uploadSong } from "../lib/api.js";
@@ -48,6 +49,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
   const lyricDocument = useStore((s) => s.lyricDocument);
   const songUnderstanding = useStore((s) => s.songUnderstanding);
   const directorPlan = useStore((s) => s.directorPlan);
+  const productionBible = useStore((s) => s.productionBible);
   const clips = useStore((s) => s.clips);
   const directorFinalUrl = useStore((s) => s.directorFinalUrl);
 
@@ -64,6 +66,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
   const approveSongUnderstanding = useStore((s) => s.approveSongUnderstanding);
   const applyProfessionalDirectorPlan = useStore((s) => s.applyProfessionalDirectorPlan);
   const approveDirectorPlan = useStore((s) => s.approveDirectorPlan);
+  const updateDirectorBible = useStore((s) => s.updateDirectorBible);
 
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -414,6 +417,8 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
         {effectiveStage === "plan" && directorPlan && (
           <PlanStep
             plan={directorPlan}
+            productionBible={productionBible}
+            onCharacterProfile={(value) => updateDirectorBible({ characterProfile: value })}
             onApprove={approvePlanAndContinue}
             onBack={() => setDirectorStage("treatment")}
           />
@@ -776,10 +781,14 @@ function TreatmentStep({
 
 function PlanStep({
   plan,
+  productionBible,
+  onCharacterProfile,
   onApprove,
   onBack,
 }: {
   plan: DirectorPlan;
+  productionBible: ProductionBible | null;
+  onCharacterProfile: (value: string) => void;
   onApprove: () => void;
   onBack: () => void;
 }) {
@@ -789,6 +798,15 @@ function PlanStep({
         <span className="director-step-number">5</span>
         <div><h2>Shot Plan</h2><p>{plan.shots.length} timed shots will become storyboard images and Agnes video takes.</p></div>
       </div>
+      <label className="director-field">
+        <span>Cast / Character Lock</span>
+        <textarea
+          value={productionBible?.characterProfile ?? ""}
+          onChange={(event) => onCharacterProfile(event.target.value)}
+          placeholder="Director-defined cast identity and continuity for this video."
+        />
+        <small>The storyboard must follow this cast direction instead of choosing a new default look for each project or shot.</small>
+      </label>
       <div className="director-understanding-block">
         {plan.shots.map((shot, index) => (
           <div className="director-section-map-row" key={shot.id}>
