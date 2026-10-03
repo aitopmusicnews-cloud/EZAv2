@@ -157,3 +157,11 @@ infra/                 Optional AWS infrastructure
 - Agnes completed media is accepted only from a valid HTTPS completion URL.
 - Remote provider media is validated before FFmpeg/network use.
 - Never commit `.env`, AWS credentials, generated media, or analysis caches.
+
+## Website-based product promos
+
+In Promo Mode, paste a public product-page URL into **Create a promo from a website**. Review the extracted product name, details, price and qualifications; set the audience, call to action and 15-, 30- or 60-second length. Confirm the review checkbox, then create an editable ad draft. **Use draft in Promo Mode** loads its narration and scene plan. Upload the suggested number of product images or clips, apply scene timing, generate and preview voiceover, and export using the existing promo renderer. Suggested on-screen text is shown for manual review; it is not automatically burned into the video.
+
+Drafting uses the existing `AZURE_OPENAI_MAIN_ENDPOINT`, `AZURE_OPENAI_MAIN_API_KEY` and `AZURE_OPENAI_MAIN_DEPLOYMENT`. Narration uses the existing Azure TTS configuration. No provider switch or additional service is required. Narration timing is estimated from word count; preview it against the timeline before exporting.
+
+Website import reads public HTML only. JavaScript-only, sign-in-only, blocked or unusually large pages may require pasting product details manually. Imports have bounded redirects, response sizes and timeouts, and validate/pin DNS addresses before connecting. Website text is treated as untrusted source material, and the user reviews facts before drafting. The editable brief is saved in this browser; reloading requires reviewing it again.

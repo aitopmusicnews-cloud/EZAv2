@@ -379,3 +379,16 @@ export async function renderPromoTimeline(
   }
   throw new Error("promo render timed out");
 }
+
+
+export async function importPromoWebsite(url: string): Promise<import("@mvs/shared").PromoWebsiteSource> {
+  return jsonOrThrow(await fetch("/api/promo/import-website", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url }),
+  }));
+}
+
+export async function generateWebsiteAd(brief: import("@mvs/shared").PromoAdBrief): Promise<import("@mvs/shared").PromoAdDraft> {
+  return jsonOrThrow(await fetch("/api/promo/website-ad", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(brief),
+  }));
+}

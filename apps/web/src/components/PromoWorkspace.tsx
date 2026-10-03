@@ -10,6 +10,7 @@ import {
   type PromoRenderRequest,
   type PromoRenderJob,
 } from "../lib/api.js";
+import { PromoWebsiteImport } from "./PromoWebsiteImport.js";
 import "../styles/promo.css";
 
 const MAX_SCENES = 10;
@@ -54,6 +55,7 @@ async function waitForPromoRender(
 }
 
 export function PromoWorkspace() {
+  const [websitePlan, setWebsitePlan] = useState<{ scenes: import("@mvs/shared").PromoAdDraft["scenes"]; duration: number } | null>(null);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [aspectRatio, setAspectRatio] = useState<"9:16" | "16:9" | "4:5">("9:16");
@@ -71,8 +73,9 @@ export function PromoWorkspace() {
 
   const selected = scenes.find((s) => s.id === selectedId) ?? scenes[0] ?? null;
   const totalDuration = useMemo(() => scenes.reduce((n, s) => n + s.duration, 0), [scenes]);
-  const onTarget = totalDuration >= 30 && totalDuration <= 35;
-  const renderInProgress = !!renderStatus && !renderUrl;
+  const targetDuration = websitePlan?.duration;
+  const onTarget = targetDuration ? Math.abs(totalDuration - targetDuration) < 0.1 : totalDuration >= 30 && totalDuration <= 35;
+  const renderInProgress = !!renderStatus && renderStatus !== "Render complete" && !renderUrl;
   const patch = (id: string, p: Partial<Scene>) => setScenes((xs) => xs.map((s) => s.id === id ? { ...s, ...p } : s));
 
   useEffect(() => {
@@ -196,13 +199,25 @@ export function PromoWorkspace() {
     <header className="promo-header">
       <div><div className="promo-eyebrow">EZAv2 · Promo Mode</div><h1>Social Promo Builder</h1></div>
       <div className="promo-header-actions">
-        <span className={`promo-duration ${onTarget ? "on-target" : "off-target"}`}>{totalDuration.toFixed(1)}s · target 30–35s</span>
+        <span className={`promo-duration ${onTarget ? "on-target" : "off-target"}`}>{totalDuration.toFixed(1)}s · target {targetDuration ? `${targetDuration}s` : "30–35s"}</span>
         <a className="btn ghost" href="/">← Music Video</a>
         <button className="btn primary" disabled={!scenes.length || !!busy || renderInProgress} onClick={() => void exportPromo()}>{renderInProgress ? renderStatus : "Export Promo MP4"}</button>
         {renderUrl && <a className="btn" href={renderUrl} target="_blank" rel="noreferrer">View render</a>}
       </div>
     </header>
 
+    <PromoWebsiteImport disabled={!!busy || renderInProgress} onUseDraft={(draft, duration) => {
+      setVoiceScript(draft.voiceover); setVoice(null); setRenderUrl(null);
+      setWebsitePlan({ scenes: draft.scenes, duration });
+    }} />
+    {websitePlan && <div className="promo-website-plan-actions">
+      <p>Visual plan: {websitePlan.scenes.length} scenes · {websitePlan.duration}s. Add that many images or clips to apply the scene timing and production notes.</p>
+      <button type="button" className="btn" disabled={!!busy || renderInProgress || scenes.length !== websitePlan.scenes.length} onClick={() => {
+        const seconds = websitePlan.duration / websitePlan.scenes.length;
+        setScenes((current) => current.map((scene, index) => ({ ...scene, duration: seconds, productionNotes: websitePlan.scenes[index]!.visual, text: "", textIn: 0, textOut: seconds })));
+        setRenderUrl(null);
+      }}>Apply visual plan to uploaded scenes</button>
+    </div>}
     <div className="promo-grid">
       <aside className="promo-scenes-panel">
         <div className="promo-panel-heading"><div><strong>Scenes</strong><span>{scenes.length}/{MAX_SCENES}</span></div><button className="btn" disabled={scenes.length >= MAX_SCENES || !!busy} onClick={() => addRef.current?.click()}>+ Add one</button></div>
@@ -258,8 +273,8 @@ export function PromoWorkspace() {
           <label className="promo-field"><span>Production notes · NEVER SPOKEN</span><textarea value={selected.productionNotes} placeholder="Camera movement, edit note, visual direction…" onChange={(e) => patch(selected.id, { productionNotes: e.target.value })} /></label>
         </> : <p className="promo-muted">Add a scene to unlock shot controls.</p>}
         <div className="promo-divider" />
-        <label className="promo-field"><span>Voiceover script · Alloy</span><textarea maxLength={4096} value={voiceScript} placeholder="Paste narration here. Production notes stay separate." onChange={(e) => setVoiceScript(e.target.value)} /></label>
-        <button className="btn primary" disabled={!voiceScript.trim() || !!busy} onClick={() => void createAlloyVoiceover()}>Generate Alloy voiceover</button>
+        <label className="promo-field"><span>Voiceover script · Alloy</span><textarea disabled={!!busy || renderInProgress} maxLength={4096} value={voiceScript} placeholder="Paste narration here. Production notes stay separate." onChange={(e) => { setVoiceScript(e.target.value); setVoice(null); setRenderUrl(null); }} /></label>
+        <button className="btn primary" disabled={!voiceScript.trim() || !!busy || renderInProgress} onClick={() => void createAlloyVoiceover()}>Generate Alloy voiceover</button>
         <p className="promo-muted">Uses Azure gpt-4o-mini-tts with Alloy. Production notes are never sent to speech. You can still upload or replace voiceover audio manually.</p>
         {error && <div className="promo-error">{error}</div>}{renderStatus && !renderUrl && <div className="promo-status">{renderStatus}</div>}
       </aside>

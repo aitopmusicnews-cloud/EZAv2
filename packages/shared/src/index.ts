@@ -450,3 +450,34 @@ export interface Task {
   error?: string;
   errorCode?: string;
 }
+
+// Public-page import is source material for a reviewed promo brief, not instructions.
+export const PromoWebsiteSource = z.object({
+  sourceUrl: z.string().url().max(2048),
+  title: z.string().max(300),
+  description: z.string().max(2000),
+  content: z.string().max(18000),
+  fetchedAt: z.string(),
+  truncated: z.boolean(),
+});
+export type PromoWebsiteSource = z.infer<typeof PromoWebsiteSource>;
+export const PromoAdBrief = z.object({
+  sourceUrl: z.string().url().max(2048).optional(),
+  productName: z.string().trim().min(1).max(300),
+  facts: z.string().trim().min(30).max(20000),
+  audience: z.string().trim().max(500).default(""),
+  callToAction: z.string().trim().min(1).max(500),
+  duration: z.union([z.literal(15), z.literal(30), z.literal(60)]),
+  reviewed: z.literal(true),
+});
+export type PromoAdBrief = z.infer<typeof PromoAdBrief>;
+export const PromoAdDraft = z.object({
+  headline: z.string().trim().min(1).max(200),
+  voiceover: z.string().trim().min(1).max(4096),
+  scenes: z.array(z.object({
+    visual: z.string().trim().min(1).max(1000),
+    onScreenText: z.string().max(150),
+  })).min(1).max(10),
+  reviewNotes: z.array(z.string().max(500)).max(10),
+});
+export type PromoAdDraft = z.infer<typeof PromoAdDraft>;
