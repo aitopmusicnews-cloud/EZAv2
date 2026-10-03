@@ -2,6 +2,8 @@ import { useState, type ChangeEvent, type DragEvent } from "react";
 import {
   getErrorMessage,
   type AudioAnalysis,
+  type Clip,
+  type DirectorPlan,
   type DirectorStage,
   type LyricDocument,
   type SongUnderstanding,
@@ -9,10 +11,18 @@ import {
 import { uploadSong } from "../lib/api.js";
 import {
   alignOfficialLyricsApi,
+  requestProfessionalTreatment,
   requestSongUnderstanding,
   transcribeSong,
 } from "../lib/directorPhaseAApi.js";
 import { useStore } from "../lib/store.js";
+import {
+  approveAllReadyDirectorClips,
+  approveAllStoryboardImages,
+  enqueueDirectorVideos,
+  generateStoryboardImages,
+  renderDirectorFinal,
+} from "../lib/directorActions.js";
 import "../styles/director.css";
 import "../styles/directorPhaseA.css";
 
@@ -37,6 +47,9 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
   const directorStage = useStore((s) => s.directorStage);
   const lyricDocument = useStore((s) => s.lyricDocument);
   const songUnderstanding = useStore((s) => s.songUnderstanding);
+  const directorPlan = useStore((s) => s.directorPlan);
+  const clips = useStore((s) => s.clips);
+  const directorFinalUrl = useStore((s) => s.directorFinalUrl);
 
   const loadSong = useStore((s) => s.loadSong);
   const unloadSong = useStore((s) => s.unloadSong);
@@ -49,6 +62,8 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
   const setSongUnderstanding = useStore((s) => s.setSongUnderstanding);
   const updateSongUnderstanding = useStore((s) => s.updateSongUnderstanding);
   const approveSongUnderstanding = useStore((s) => s.approveSongUnderstanding);
+  const applyProfessionalDirectorPlan = useStore((s) => s.applyProfessionalDirectorPlan);
+  const approveDirectorPlan = useStore((s) => s.approveDirectorPlan);
 
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -86,7 +101,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
       loadSong(result.id, result.audioUrl, result.analysis, result.filename ?? file.name);
       setDirectorStage("lyrics");
       setBusy(null);
-      await runTranscription({ songId: result.id, audioUrl: result.audioUrl, duration: result.analysis.duration });
+      setStatus("Song analyzed. Transcribe vocals, paste official lyrics, or mark the track instrumental to continue.");
     } catch (err) {
       setBusy(null);
       setStatus(null);
@@ -171,10 +186,128 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
 
   const reanalyzeMeaning = () => void analyzeMeaning();
 
+  const buildProfessionalTreatment = async () => {
+    if (!analysis || !songUnderstanding?.approvedAt) {
+      setError("Approve Song Understanding before generating the professional treatment.");
+      return;
+    }
+    setBusy("treatment");
+    clearMessages();
+    setStatus("Building a production-ready treatment and shot plan with Azure…");
+    try {
+      const result = await requestProfessionalTreatment({
+        analysis,
+        understanding: songUnderstanding,
+        vision: directorVision,
+      });
+      applyProfessionalDirectorPlan(result.plan, result.productionBible);
+      setStatus("Professional treatment and shot plan are ready. Review the plan before generating images.");
+    } catch (err) {
+      setStatus(null);
+      setError(`Professional Treatment failed: ${getErrorMessage(err)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const approvePlanAndContinue = () => {
+    clearMessages();
+    approveDirectorPlan();
+    const approved = useStore.getState().directorPlan?.approvedAt;
+    if (!approved) {
+      setError("The plan cannot be approved until its production continuity rules are complete.");
+      return;
+    }
+    setDirectorStage("images");
+    setStatus("Plan approved. Generate the storyboard images next.");
+  };
+
+  const generateImages = async () => {
+    setBusy("images");
+    clearMessages();
+    try {
+      await generateStoryboardImages((completed, total) => {
+        setStatus(`Generating storyboard images… ${completed}/${total}`);
+      });
+      setStatus("Storyboard images are ready. Review them, then approve all to continue.");
+    } catch (err) {
+      setStatus(null);
+      setError(`Storyboard generation failed: ${getErrorMessage(err)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const approveImagesAndContinue = () => {
+    clearMessages();
+    approveAllStoryboardImages();
+    const plan = useStore.getState().directorPlan;
+    if (!plan?.shots.every((shot) => shot.imageApproved && shot.imageUrl)) {
+      setError("Every storyboard image must be ready before continuing.");
+      return;
+    }
+    setDirectorStage("takes");
+    setStatus("Storyboard approved. Generate the Agnes video takes next.");
+  };
+
+  const generateVideoTakes = () => {
+    clearMessages();
+    try {
+      const queued = enqueueDirectorVideos();
+      setStatus(queued.length
+        ? `Queued ${queued.length} Agnes video take${queued.length === 1 ? "" : "s"}. Generation continues while you stay on this screen.`
+        : "All video takes are already generated.");
+    } catch (err) {
+      setError(`Video generation could not start: ${getErrorMessage(err)}`);
+    }
+  };
+
+  const approveTakesAndContinue = () => {
+    clearMessages();
+    approveAllReadyDirectorClips();
+    const plan = useStore.getState().directorPlan;
+    if (!plan?.shots.every((shot) => shot.videoApproved)) {
+      setError("All Agnes video takes must finish before continuing to the final edit.");
+      return;
+    }
+    setDirectorStage("edit");
+    setStatus("All video takes approved. The project is ready for final render.");
+  };
+
+  const renderFinalVideo = async () => {
+    setBusy("render");
+    clearMessages();
+    setStatus("Rendering final music video with the original song…");
+    try {
+      const url = await renderDirectorFinal((job) => {
+        if (job.state === "queued") setStatus("Final render queued…");
+        else if (job.state === "running") setStatus("Rendering final music video…");
+      });
+      setStatus("Final music video is ready.");
+      return url;
+    } catch (err) {
+      setStatus(null);
+      setError(`Final render failed: ${getErrorMessage(err)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const videoTakesReady = Boolean(directorPlan?.shots.length) && directorPlan!.shots.every((shot) => {
+    const clip = clips.find((item) => item.id === shot.clipId);
+    return clip?.status === "ready" && Boolean(clip.videoUrl);
+  });
+
   const canOpenStage = (stage: DirectorStage) => {
     if (stage === "song") return true;
     if (stage === "lyrics") return Boolean(analysis);
     if (stage === "understanding") return Boolean(lyricDocument?.approvedAt);
+    if (stage === "treatment") return Boolean(songUnderstanding?.approvedAt);
+    if (stage === "plan") return directorPlan?.planningBasis === "professional-treatment";
+    if (stage === "images") return Boolean(directorPlan?.approvedAt);
+    if (stage === "takes" || stage === "clips") return Boolean(directorPlan?.approvedAt);
+    if (stage === "edit") return videoTakesReady;
+    if (stage === "final") return Boolean(directorFinalUrl);
     return false;
   };
 
@@ -269,18 +402,56 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
         )}
 
         {effectiveStage === "treatment" && (
-          <LockedFutureStep
-            title="Song Understanding approved"
-            message="Professional Treatment is the next implementation phase. The old BPM/energy heuristic planner is disabled, so BeatSync will not generate a fake treatment while the professional treatment engine is being built."
+          <TreatmentStep
+            plan={directorPlan}
+            busy={busy}
+            onGenerate={() => void buildProfessionalTreatment()}
+            onReviewPlan={() => setDirectorStage("plan")}
             onBack={() => setDirectorStage("understanding")}
           />
         )}
 
-        {!["song", "lyrics", "understanding", "treatment"].includes(effectiveStage) && (
-          <LockedFutureStep
-            title="Legacy Director stage locked"
-            message="This saved project reached a pre-professional Director stage. Professional generation now requires verified Lyrics → Song Understanding → Treatment. Open the Advanced Editor for manual work, or return to Lyrics to upgrade the Director foundation."
-            onBack={() => setDirectorStage(lyricDocument?.approvedAt ? "understanding" : analysis ? "lyrics" : "song")}
+        {effectiveStage === "plan" && directorPlan && (
+          <PlanStep
+            plan={directorPlan}
+            onApprove={approvePlanAndContinue}
+            onBack={() => setDirectorStage("treatment")}
+          />
+        )}
+
+        {effectiveStage === "images" && directorPlan?.approvedAt && (
+          <ImagesStep
+            plan={directorPlan}
+            busy={busy}
+            onGenerate={() => void generateImages()}
+            onContinue={approveImagesAndContinue}
+            onBack={() => setDirectorStage("plan")}
+          />
+        )}
+
+        {effectiveStage === "takes" && directorPlan?.approvedAt && (
+          <TakesStep
+            plan={directorPlan}
+            clips={clips}
+            allReady={videoTakesReady}
+            onGenerate={generateVideoTakes}
+            onContinue={approveTakesAndContinue}
+            onBack={() => setDirectorStage("images")}
+          />
+        )}
+
+        {effectiveStage === "edit" && directorPlan?.approvedAt && (
+          <EditStep
+            busy={busy}
+            onRender={() => void renderFinalVideo()}
+            onBack={() => setDirectorStage("takes")}
+          />
+        )}
+
+        {effectiveStage === "final" && directorFinalUrl && (
+          <FinalStep
+            url={directorFinalUrl}
+            onBack={() => setDirectorStage("edit")}
           />
         )}
       </main>
@@ -390,7 +561,7 @@ function LyricsStep({
       </div>
 
       <div className="director-action-row">
-        <button type="button" className="btn ghost" disabled={busy === "transcription"} onClick={onRetry}>Retry Transcription</button>
+        <button type="button" className="btn ghost" disabled={busy === "transcription"} onClick={onRetry}>{document ? "Retry Transcription" : "Transcribe Vocals"}</button>
         <button type="button" className="btn ghost" onClick={onInstrumental}>Mark as instrumental</button>
         <button type="button" className="btn ghost" onClick={onBack}>Back to Song</button>
       </div>
@@ -561,14 +732,205 @@ function UnderstandingStep({
   );
 }
 
-function LockedFutureStep({ title, message, onBack }: { title: string; message: string; onBack: () => void }) {
+function TreatmentStep({
+  plan,
+  busy,
+  onGenerate,
+  onReviewPlan,
+  onBack,
+}: {
+  plan: DirectorPlan | null;
+  busy: string | null;
+  onGenerate: () => void;
+  onReviewPlan: () => void;
+  onBack: () => void;
+}) {
   return (
     <section className="director-panel">
-      <div className="director-stage-card director-stage-approved">
-        <strong>{title}</strong>
-        <p>{message}</p>
+      <div className="director-section-heading">
+        <span className="director-step-number">4</span>
+        <div><h2>Professional Treatment</h2><p>Azure turns the approved song understanding into a production-ready visual concept and timed shot plan.</p></div>
       </div>
-      <button type="button" className="btn ghost" onClick={onBack}>Review approved foundation</button>
+      {plan?.planningBasis === "professional-treatment" ? (
+        <div className="director-stage-card director-stage-approved">
+          <strong>{plan.treatment.title}</strong>
+          <p>{plan.treatment.concept}</p>
+          <p><strong>Style:</strong> {plan.treatment.style}</p>
+          <p><strong>Pacing:</strong> {plan.treatment.pacing}</p>
+        </div>
+      ) : (
+        <div className="director-stage-card">
+          <strong>Ready to build the treatment</strong>
+          <p>This uses the approved Song Understanding, your Director Vision, and fixed music timing. It does not use the retired BPM-only planner.</p>
+        </div>
+      )}
+      <div className="director-action-row">
+        <button type="button" className="btn ghost" onClick={onBack}>Back to Understanding</button>
+        {plan?.planningBasis === "professional-treatment"
+          ? <button type="button" className="director-primary" onClick={onReviewPlan}>Review Shot Plan</button>
+          : <button type="button" className="director-primary" disabled={busy === "treatment"} onClick={onGenerate}>{busy === "treatment" ? "Building Treatment…" : "Build Professional Treatment"}</button>}
+      </div>
+    </section>
+  );
+}
+
+function PlanStep({
+  plan,
+  onApprove,
+  onBack,
+}: {
+  plan: DirectorPlan;
+  onApprove: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <section className="director-panel">
+      <div className="director-section-heading">
+        <span className="director-step-number">5</span>
+        <div><h2>Shot Plan</h2><p>{plan.shots.length} timed shots will become storyboard images and Agnes video takes.</p></div>
+      </div>
+      <div className="director-understanding-block">
+        {plan.shots.map((shot, index) => (
+          <div className="director-section-map-row" key={shot.id}>
+            <strong>{index + 1}. {formatTime(shot.start)}–{formatTime(shot.end)} · {shot.role}{shot.hero ? " · HERO" : ""}</strong>
+            <p>{shot.idea}</p>
+            <span>{shot.camera} · {shot.framing} · {shot.mood}</span>
+          </div>
+        ))}
+      </div>
+      <div className="director-approval-bar">
+        <button type="button" className="btn ghost" onClick={onBack}>Back to Treatment</button>
+        <button type="button" className="director-primary" onClick={onApprove}>{plan.approvedAt ? "Plan Approved" : "Approve Plan & Generate Images"}</button>
+      </div>
+    </section>
+  );
+}
+
+function ImagesStep({
+  plan,
+  busy,
+  onGenerate,
+  onContinue,
+  onBack,
+}: {
+  plan: DirectorPlan;
+  busy: string | null;
+  onGenerate: () => void;
+  onContinue: () => void;
+  onBack: () => void;
+}) {
+  const ready = plan.shots.filter((shot) => shot.imageStatus === "ready" && shot.imageUrl).length;
+  const allReady = ready === plan.shots.length;
+  return (
+    <section className="director-panel">
+      <div className="director-section-heading">
+        <span className="director-step-number">6</span>
+        <div><h2>Storyboard Images</h2><p>{ready}/{plan.shots.length} storyboard frames ready.</p></div>
+      </div>
+      <div className="director-understanding-grid">
+        {plan.shots.map((shot) => (
+          <div className="director-stage-card" key={shot.id}>
+            <strong>{shot.role} · {formatTime(shot.start)}–{formatTime(shot.end)}</strong>
+            {shot.imageUrl ? <img src={shot.imageUrl} alt={shot.role} style={{ width: "100%", borderRadius: 8 }} /> : <p>{shot.imageStatus === "failed" ? shot.imageError ?? "Image generation failed." : "Waiting for storyboard image."}</p>}
+          </div>
+        ))}
+      </div>
+      <div className="director-approval-bar">
+        <button type="button" className="btn ghost" onClick={onBack}>Back to Plan</button>
+        <button type="button" className="btn" disabled={busy === "images"} onClick={onGenerate}>{busy === "images" ? "Generating Images…" : ready ? "Generate Missing Images" : "Generate Storyboard Images"}</button>
+        <button type="button" className="director-primary" disabled={!allReady || busy === "images"} onClick={onContinue}>Approve Images & Generate Video</button>
+      </div>
+    </section>
+  );
+}
+
+function TakesStep({
+  plan,
+  clips,
+  allReady,
+  onGenerate,
+  onContinue,
+  onBack,
+}: {
+  plan: DirectorPlan;
+  clips: Clip[];
+  allReady: boolean;
+  onGenerate: () => void;
+  onContinue: () => void;
+  onBack: () => void;
+}) {
+  const readyCount = plan.shots.filter((shot) => clips.find((clip) => clip.id === shot.clipId)?.status === "ready").length;
+  const active = plan.shots.some((shot) => {
+    const status = clips.find((clip) => clip.id === shot.clipId)?.status;
+    return status === "queued" || status === "generating";
+  });
+  return (
+    <section className="director-panel">
+      <div className="director-section-heading">
+        <span className="director-step-number">7</span>
+        <div><h2>Agnes Video Takes</h2><p>{readyCount}/{plan.shots.length} generated video takes ready.</p></div>
+      </div>
+      <div className="director-understanding-block">
+        {plan.shots.map((shot) => {
+          const clip = clips.find((item) => item.id === shot.clipId);
+          return (
+            <div className="director-section-map-row" key={shot.id}>
+              <strong>{shot.role} · {formatTime(shot.start)}–{formatTime(shot.end)}</strong>
+              <span>Status: {clip?.status ?? "empty"}</span>
+              {clip?.lastError && <p>{clip.lastError}</p>}
+              {clip?.videoUrl && <video src={clip.videoUrl} controls muted playsInline style={{ width: "100%", maxWidth: 520 }} />}
+            </div>
+          );
+        })}
+      </div>
+      <div className="director-approval-bar">
+        <button type="button" className="btn ghost" onClick={onBack}>Back to Images</button>
+        <button type="button" className="btn" disabled={active} onClick={onGenerate}>{active ? "Agnes Generating…" : readyCount ? "Generate Missing Takes" : "Generate Agnes Video Takes"}</button>
+        <button type="button" className="director-primary" disabled={!allReady} onClick={onContinue}>Approve Takes & Final Edit</button>
+      </div>
+    </section>
+  );
+}
+
+function EditStep({
+  busy,
+  onRender,
+  onBack,
+}: {
+  busy: string | null;
+  onRender: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <section className="director-panel">
+      <div className="director-section-heading">
+        <span className="director-step-number">8</span>
+        <div><h2>Final Edit</h2><p>Combine the approved video takes with the original uploaded song as the final soundtrack.</p></div>
+      </div>
+      <div className="director-stage-card director-stage-approved">
+        <strong>Ready to render</strong>
+        <p>Generated clip audio is discarded. The original song remains the final music track.</p>
+      </div>
+      <div className="director-approval-bar">
+        <button type="button" className="btn ghost" onClick={onBack}>Back to Takes</button>
+        <button type="button" className="director-primary" disabled={busy === "render"} onClick={onRender}>{busy === "render" ? "Rendering…" : "Render Final Music Video"}</button>
+      </div>
+    </section>
+  );
+}
+
+function FinalStep({ url, onBack }: { url: string; onBack: () => void }) {
+  return (
+    <section className="director-panel">
+      <div className="director-section-heading">
+        <span className="director-step-number">9</span>
+        <div><h2>Final Video</h2><p>Your rendered music video is ready.</p></div>
+      </div>
+      <video src={url} controls playsInline style={{ width: "100%", maxWidth: 960 }} />
+      <div className="director-action-row">
+        <button type="button" className="btn ghost" onClick={onBack}>Back to Edit</button>
+        <a className="director-primary" href={url} target="_blank" rel="noreferrer">Open Final Video</a>
+      </div>
     </section>
   );
 }

@@ -1,6 +1,9 @@
 import type {
   AlignOfficialLyricsRequest,
+  AudioAnalysis,
+  DirectorPlan,
   LyricDocument,
+  ProductionBible,
   SongUnderstanding,
   SongUnderstandingRequest,
   TranscribeSongRequest,
@@ -47,6 +50,19 @@ export async function alignOfficialLyricsApi(req: AlignOfficialLyricsRequest): P
 
 export async function requestSongUnderstanding(req: SongUnderstandingRequest): Promise<SongUnderstanding> {
   return jsonOrThrow(await fetch("/api/director/understand", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(req),
+  }));
+}
+
+
+export async function requestProfessionalTreatment(req: {
+  analysis: AudioAnalysis;
+  understanding: SongUnderstanding;
+  vision: string;
+}): Promise<{ plan: DirectorPlan; productionBible: ProductionBible }> {
+  return jsonOrThrow(await fetch("/api/director/treatment", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(req),
