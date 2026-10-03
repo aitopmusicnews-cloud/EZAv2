@@ -481,13 +481,22 @@ export const useStore = create<State>()(
 
       setDirectorVision: (directorVision) => set({ directorVision }),
       applyProfessionalDirectorPlan: (directorPlan, productionBible) =>
-        set({
-          productionBible,
-          directorPlan,
-          clips: directorClips(directorPlan, productionBible),
-          selectedClipId: directorPlan.shots[0]?.clipId ?? null,
-          directorStage: "plan",
-          directorFinalUrl: null,
+        set((state) => {
+          // Professional treatment can refresh creative direction, but it must never
+          // discard explicit Character/Vehicle Locks already chosen by the director.
+          const lockedBible: ProductionBible = {
+            ...productionBible,
+            characterReferenceAssetIds: state.productionBible?.characterReferenceAssetIds ?? productionBible.characterReferenceAssetIds,
+            vehicleReferenceAssetIds: state.productionBible?.vehicleReferenceAssetIds ?? productionBible.vehicleReferenceAssetIds,
+          };
+          return {
+            productionBible: lockedBible,
+            directorPlan,
+            clips: directorClips(directorPlan, lockedBible),
+            selectedClipId: directorPlan.shots[0]?.clipId ?? null,
+            directorStage: "plan",
+            directorFinalUrl: null,
+          };
         }),
       buildDirectorPlan: () => {
         const { analysis, directorVision, productionBible } = get();
