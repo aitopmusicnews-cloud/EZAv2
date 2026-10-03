@@ -339,6 +339,17 @@ export async function uploadAudioAsset(file: File): Promise<{ id: string; url: s
   return jsonOrThrow(await fetch("/api/audio/upload", { method: "POST", body: fd }));
 }
 
+export async function generatePromoVoiceover(
+  text: string,
+  speed = 1,
+): Promise<{ id: string; url: string; filename: string; voice: string }> {
+  return jsonOrThrow(await fetch("/api/promo/voiceover", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text, speed }),
+  }));
+}
+
 export async function submitPromoRender(req: PromoRenderRequest): Promise<RenderSubmitResponse> {
   return jsonOrThrow(await fetch("/api/promo/render", {
     method: "POST",
