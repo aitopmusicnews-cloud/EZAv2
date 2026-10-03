@@ -34,7 +34,8 @@ import { AGNES_MIN_CREATE_INTERVAL_MS, MAX_CONCURRENT, enqueueGeneration } from 
 describe("scheduler production controls", () => {
   it("paces Agnes video submissions for the free/default provider limit", () => {
     expect(MAX_CONCURRENT).toBe(1);
-    expect(AGNES_MIN_CREATE_INTERVAL_MS).toBeGreaterThanOrEqual(60_000);
+    expect(AGNES_MIN_CREATE_INTERVAL_MS).toBeGreaterThanOrEqual(30_000);
+    expect(AGNES_MIN_CREATE_INTERVAL_MS).toBeLessThan(60_000);
   });
 
   beforeEach(() => {
