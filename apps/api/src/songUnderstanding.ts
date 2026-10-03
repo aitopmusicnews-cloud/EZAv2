@@ -62,7 +62,7 @@ const SONG_UNDERSTANDING_JSON_SCHEMA = {
   },
 } as const;
 
-type Options = { apiKey?: string; model?: string; fetchImpl?: typeof fetch };
+type Options = { apiKey?: string; model?: string; endpoint?: string; fetchImpl?: typeof fetch };
 
 async function safeProviderError(response: Response): Promise<string> {
   const text = await response.text();
@@ -102,17 +102,20 @@ export async function generateSongUnderstanding(
   options: Options = {},
 ): Promise<SongUnderstanding> {
   if (!request.lyrics.approvedAt) throw new Error("Approve lyrics before Song Understanding.");
-  const apiKey = options.apiKey ?? config.OPENAI_API_KEY ?? "";
+  const azureEndpoint = options.endpoint ?? config.AZURE_OPENAI_MAIN_ENDPOINT;
+  const azureApiKey = options.apiKey ?? config.AZURE_OPENAI_MAIN_API_KEY;
+  const useAzure = Boolean(azureEndpoint && azureApiKey);
+  const apiKey = useAzure ? azureApiKey! : (options.apiKey ?? config.OPENAI_API_KEY ?? "");
   if (!apiKey) throw new Error("Song Understanding is not configured.");
-  const model = options.model ?? config.SONG_UNDERSTANDING_MODEL;
+  const model = options.model ?? (useAzure ? config.AZURE_OPENAI_MAIN_DEPLOYMENT : config.SONG_UNDERSTANDING_MODEL);
   const fetchImpl = options.fetchImpl ?? fetch;
+  const endpoint = useAzure ? azureEndpoint! : "https://api.openai.com/v1/responses";
 
-  const response = await fetchImpl("https://api.openai.com/v1/responses", {
+  const response = await fetchImpl(endpoint, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
-    },
+    headers: useAzure
+      ? { "api-key": apiKey, "content-type": "application/json" }
+      : { Authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
     body: JSON.stringify({
       model,
       input: [
