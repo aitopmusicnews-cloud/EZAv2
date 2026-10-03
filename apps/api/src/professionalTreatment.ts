@@ -80,6 +80,9 @@ Rules:
 - The timing slots are authoritative. Return exactly one creative shot description for every slot index and do not change timing.
 - Ground story claims in the supplied Song Understanding. Never invent lyric facts that are not present.
 - Use the artist/director vision when supplied, but preserve stated uncertainty instead of pretending certainty.
+- If selectedVisualStyle is supplied, treat it as explicit production direction and carry it through the treatment, Production Bible, and shot choices.
+- directorRequest is a direct instruction from the human director. Follow it unless it conflicts with fixed timing or approved song facts.
+- When previousPlan is supplied, this is a revision. Preserve strong existing decisions that the director did not ask to change, while returning a complete revised treatment and full shot plan.
 - Make each shot specific enough for image generation and image-to-video generation.
 - Casting is a Director decision: define a concrete character/cast profile before storyboard generation instead of relying on image-model defaults.
 - Follow any character identity, demographic traits, or appearance explicitly supplied by the Artist / Director Vision or reference images. Do not infer race or ethnicity from lyrics, genre, location, or music style.
@@ -174,7 +177,15 @@ function slotsFor(analysis: AudioAnalysis, understanding: SongUnderstanding): Sl
 }
 
 export async function generateProfessionalTreatment(
-  input: { analysis: AudioAnalysis; understanding: SongUnderstanding; vision: string },
+  input: {
+    analysis: AudioAnalysis;
+    understanding: SongUnderstanding;
+    vision: string;
+    stylePrompt?: string;
+    directorRequest?: string;
+    previousPlan?: DirectorPlanType;
+    previousProductionBible?: ProductionBibleType;
+  },
   options: Options = {},
 ): Promise<{ plan: DirectorPlanType; productionBible: ProductionBibleType }> {
   if (!input.understanding.approvedAt) throw new Error("Approve Song Understanding before generating a treatment.");
@@ -199,6 +210,10 @@ export async function generateProfessionalTreatment(
             type: "input_text",
             text: JSON.stringify({
               artistDirectorVision: input.vision,
+              selectedVisualStyle: input.stylePrompt?.trim() || undefined,
+              directorRequest: input.directorRequest?.trim() || undefined,
+              previousPlan: input.previousPlan,
+              previousProductionBible: input.previousProductionBible,
               song: { duration: input.analysis.duration, bpm: input.analysis.bpm, key: input.analysis.key },
               understanding: input.understanding,
               fixedTimingSlots: slots,
