@@ -49,6 +49,7 @@ describe("generateProfessionalTreatment", () => {
         pacing: "measured build with stronger final payoff",
       },
       productionBible: {
+        characterProfile: "One consistent lead performer with a distinctive silhouette, hair, build, and screen presence; preserve the same identity across all recurring shots.",
         wardrobeProfile: "Keep one approved performance look across connected shots.",
         locationProfile: "Night city locations with consistent geography.",
         stylePrompt: "Cinematic night performance, premium realism.",
@@ -91,6 +92,7 @@ describe("generateProfessionalTreatment", () => {
     expect(result.plan.shots).toHaveLength(4);
     expect(result.plan.shots[0]!.start).toBe(0);
     expect(result.plan.shots.at(-1)!.end).toBe(12);
+    expect(result.productionBible.characterProfile).toContain("consistent lead performer");
     expect(result.productionBible.negativePrompt).toContain("identity drift");
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
