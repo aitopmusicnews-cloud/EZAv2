@@ -22,6 +22,18 @@
 .director-field textarea, .director-field input, .director-control-grid input, .director-control-grid select { width: 100%; color: var(--text); background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 9px; padding: 10px 12px; }
 .director-field textarea { min-height: 92px; resize: vertical; }.director-field.compact textarea { min-height: 68px; }
 .director-field small, .director-details small { color: var(--text-faint); }
+/* Keep all editable Director text readable in the dark UI. Some lyric/transcription
+   and Song Understanding controls are not wrapped in .director-field, so browser
+   defaults otherwise render a white surface with inherited light text. */
+.director-panel textarea,
+.director-panel input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+.director-panel select {
+  color: var(--text);
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+.director-panel textarea::placeholder,
+.director-panel input::placeholder { color: var(--text-faint); }
 .director-details { margin: 18px 0; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface); }.director-details summary { cursor: pointer; font-weight: 600; }.director-details summary span { color: var(--text-faint); font-weight: 400; }
 .director-reference-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; margin-top: 14px; }.director-reference-upload { min-height: 120px; border: 1px dashed var(--border-strong); border-radius: 10px; display: grid; place-items: center; text-align: center; overflow: hidden; cursor: pointer; background: var(--surface-2); }.director-reference-upload img { width: 100%; height: 150px; object-fit: cover; }.director-reference-upload div { display: grid; gap: 4px; }.director-reference-upload span { color: var(--text-faint); font-size: 11px; }
 .director-primary { display: inline-flex; align-items: center; justify-content: center; border: 0; background: var(--accent); color: white; border-radius: 9px; padding: 11px 18px; cursor: pointer; font-weight: 650; text-decoration: none; }.director-primary:hover { background: var(--accent-2); }.director-primary:disabled { opacity: .4; cursor: not-allowed; }.director-primary.link { font-size: 12px; }
