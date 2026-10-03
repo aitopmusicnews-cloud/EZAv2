@@ -157,3 +157,11 @@ infra/                 Optional AWS infrastructure
 - Agnes completed media is accepted only from a valid HTTPS completion URL.
 - Remote provider media is validated before FFmpeg/network use.
 - Never commit `.env`, AWS credentials, generated media, or analysis caches.
+
+## Director review and duration controls
+
+- In **Plan**, edit a shot's length in seconds. The shared cut moves into the next shot (or the previous shot for the last take), keeping full-song coverage without gaps. Both affected takes lose their approvals and must be regenerated; unrelated takes and storyboard images are retained. Length edits are blocked during active generation.
+- Set **Cast and character appearance** in Plan; applying a casting change invalidates the storyboard. Existing production constraints are also passed into professional treatment generation.
+- Review each storyboard image for cast, duplicate people and correct seating. Review each video for the right scene and natural motion. Mark each item approved separately, or use its regeneration button. These are human review gates, not automated visual-quality certification.
+- In **Final Edit**, choose the full song, a 15/30/60-second preset, or a custom duration. Short exports use the beginning of the song, trimming audio and video together. The selection is saved with the project. Generated takes are not sped up or slowed down to fit.
+- Director prompts specify distinct character identities, plausible driver seating/contact and one continuous natural action per shot. These instructions reduce ambiguity but cannot guarantee provider output quality.

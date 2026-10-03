@@ -4,7 +4,7 @@ import type { AudioAnalysis, AudioSection, Clip, DirectorPlan, DirectorShot, Dir
 import { AGNES_VIDEO_MODEL, ProjectSnapshot } from "@mvs/shared";
 import type { Job } from "./scheduler.js";
 import { getWs } from "./wavesurfer-ref.js";
-import { createDirectorPlan, directorScenePrompt, suggestProductionBible } from "./director.js";
+import { createDirectorPlan, directorScenePrompt, suggestProductionBible, resizeDirectorShot } from "./director.js";
 
 export const MAX_CLIP_LEN = 300;
 export const MIN_CLIP_LEN = 0.5;
@@ -147,6 +147,8 @@ type State = {
   directorPlan: DirectorPlan | null;
   directorStage: DirectorStage;
   directorFinalUrl: string | null;
+  setDirectorShotDuration: (id: string, seconds: number) => void;
+  setDirectorExportDuration: (seconds: number | undefined) => void;
 
   setProjectName: (name: string) => void;
   loadSong: (songId: string, audioUrl: string, analysis: AudioAnalysis, filename: string | null) => void;
@@ -480,6 +482,34 @@ export const useStore = create<State>()(
         } : state),
 
       setDirectorVision: (directorVision) => set({ directorVision }),
+      setDirectorExportDuration: (seconds) => set((state) => {
+        if (!state.directorPlan || !state.analysis) return state;
+        if (seconds !== undefined && (!Number.isFinite(seconds) || seconds < 0.5 || seconds > state.analysis.duration)) {
+          throw new Error("Export length must be between 0.5 seconds and the full song length.");
+        }
+        return { directorPlan: { ...state.directorPlan, exportDuration: seconds }, directorFinalUrl: null };
+      }),
+      setDirectorShotDuration: (id, seconds) => set((state) => {
+        if (!state.directorPlan) return state;
+        if (state.clips.some((clip) => clip.status === "queued" || clip.status === "generating") || state.directorPlan.shots.some((shot) => shot.imageStatus === "generating")) {
+          throw new Error("Wait for generation to finish before changing shot lengths.");
+        }
+        const original = state.directorPlan.shots;
+        const shots = resizeDirectorShot(original, id, seconds);
+        const changed = new Set(shots.filter((shot, i) => shot.start !== original[i]!.start || shot.end !== original[i]!.end).map((shot) => shot.clipId));
+        if (!changed.size) return state;
+        return {
+          directorPlan: { ...state.directorPlan, shots, approvedAt: undefined },
+          directorFinalUrl: null,
+          directorStage: "plan" as const,
+          clips: state.clips.map((clip) => {
+            if (!changed.has(clip.id)) return clip;
+            const shot = shots.find((item) => item.clipId === clip.id)!;
+            return { ...clip, start: shot.start, end: shot.end, status: "empty" as const, videoUrl: undefined, generationTaskId: undefined, thumbnailUrl: undefined, lastError: undefined,
+              lipSyncTaskId: undefined, lipSyncStatus: undefined, lipSyncSourceVideoUrl: undefined };
+          }),
+        };
+      }),
       applyProfessionalDirectorPlan: (directorPlan, productionBible) =>
         set({
           productionBible,
@@ -553,7 +583,10 @@ export const useStore = create<State>()(
           return {
             directorPlan,
             directorStage: "images" as const,
-            clips: directorClips(directorPlan, state.productionBible),
+            clips: directorClips(directorPlan, state.productionBible).map((clip) => {
+              const previous = state.clips.find((item) => item.id === clip.id);
+              return previous && previous.start === clip.start && previous.end === clip.end ? previous : clip;
+            }),
             directorFinalUrl: null,
           };
         }),
@@ -562,7 +595,7 @@ export const useStore = create<State>()(
           if (!state.directorPlan) return state;
           const shots = state.directorPlan.shots.map((shot) => {
             if (shot.id !== id) return shot;
-            const changedImage = Boolean(patch.url && patch.url !== shot.imageUrl);
+            const changedImage = patch.status !== "ready" || Boolean(patch.url && patch.url !== shot.imageUrl);
             return {
               ...shot,
               imageStatus: patch.status,
@@ -575,6 +608,7 @@ export const useStore = create<State>()(
           const target = shots.find((shot) => shot.id === id);
           return {
             directorPlan: { ...state.directorPlan, shots },
+            directorFinalUrl: null,
             clips: state.clips.map((clip) => target && clip.id === target.clipId
               ? {
                   ...clip,

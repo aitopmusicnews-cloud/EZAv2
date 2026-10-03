@@ -80,6 +80,10 @@ Rules:
 - Ground story claims in the supplied Song Understanding. Never invent lyric facts that are not present.
 - Use the artist/director vision when supplied, but preserve stated uncertainty instead of pretending certainty.
 - Make each shot specific enough for image generation and image-to-video generation.
+- Specify the distinct cast count, each person's physical location, one clear action, and one camera movement for each shot. Multiple references of one person must never become duplicate cast members.
+- For human-driven moving cars, place the driver inside the cabin, seated behind the steering wheel with plausible hand and foot contact. Respect stated driver-side geometry. No empty moving driver seat, floating occupants or bodies intersecting the car.
+- Favor natural real-time motion, believable weight and subtle gestures. Musical energy does not require exaggerated body movement. Avoid robotic posing and conflicting simultaneous actions.
+- Respect supplied casting and character references. Never infer ethnicity from a model provider or music genre.
 - Maintain visual continuity across recurring characters, wardrobe, locations, props, palette, and lighting.
 - Vary framing and camera movement so the finished edit does not feel repetitive.
 - Reserve hero=true for a small number of strongest payoff shots.
@@ -170,7 +174,7 @@ function slotsFor(analysis: AudioAnalysis, understanding: SongUnderstanding): Sl
 }
 
 export async function generateProfessionalTreatment(
-  input: { analysis: AudioAnalysis; understanding: SongUnderstanding; vision: string },
+  input: { analysis: AudioAnalysis; understanding: SongUnderstanding; vision: string; productionBible?: ProductionBibleType },
   options: Options = {},
 ): Promise<{ plan: DirectorPlanType; productionBible: ProductionBibleType }> {
   if (!input.understanding.approvedAt) throw new Error("Approve Song Understanding before generating a treatment.");
@@ -195,6 +199,7 @@ export async function generateProfessionalTreatment(
             type: "input_text",
             text: JSON.stringify({
               artistDirectorVision: input.vision,
+              approvedProductionConstraints: input.productionBible ?? {},
               song: { duration: input.analysis.duration, bpm: input.analysis.bpm, key: input.analysis.key },
               understanding: input.understanding,
               fixedTimingSlots: slots,
@@ -264,7 +269,7 @@ export async function generateProfessionalTreatment(
       };
     }),
   });
-  const productionBible = ProductionBible.parse(generated.productionBible);
+  const productionBible = ProductionBible.parse({ ...generated.productionBible, ...input.productionBible });
   if (!productionBible.negativePrompt?.trim()) throw new Error("Professional Treatment must include a negative prompt.");
   return { plan, productionBible };
 }

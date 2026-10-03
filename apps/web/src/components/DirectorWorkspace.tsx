@@ -17,8 +17,8 @@ import {
 } from "../lib/directorPhaseAApi.js";
 import { useStore } from "../lib/store.js";
 import {
-  approveAllReadyDirectorClips,
-  approveAllStoryboardImages,
+  generateStoryboardImage,
+  regenerateDirectorVideo,
   enqueueDirectorVideos,
   generateStoryboardImages,
   renderDirectorFinal,
@@ -199,6 +199,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
         analysis,
         understanding: songUnderstanding,
         vision: directorVision,
+        productionBible: useStore.getState().productionBible ?? undefined,
       });
       applyProfessionalDirectorPlan(result.plan, result.productionBible);
       setStatus("Professional treatment and shot plan are ready. Review the plan before generating images.");
@@ -229,7 +230,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
       await generateStoryboardImages((completed, total) => {
         setStatus(`Generating storyboard images… ${completed}/${total}`);
       });
-      setStatus("Storyboard images are ready. Review them, then approve all to continue.");
+      setStatus("Storyboard images are ready. Review and approve each image to continue.");
     } catch (err) {
       setStatus(null);
       setError(`Storyboard generation failed: ${getErrorMessage(err)}`);
@@ -240,10 +241,9 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
 
   const approveImagesAndContinue = () => {
     clearMessages();
-    approveAllStoryboardImages();
     const plan = useStore.getState().directorPlan;
     if (!plan?.shots.every((shot) => shot.imageApproved && shot.imageUrl)) {
-      setError("Every storyboard image must be ready before continuing.");
+      setError("Review and approve every storyboard image before continuing.");
       return;
     }
     setDirectorStage("takes");
@@ -264,10 +264,9 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
 
   const approveTakesAndContinue = () => {
     clearMessages();
-    approveAllReadyDirectorClips();
     const plan = useStore.getState().directorPlan;
     if (!plan?.shots.every((shot) => shot.videoApproved)) {
-      setError("All Agnes video takes must finish before continuing to the final edit.");
+      setError("Review and approve every Agnes video take before continuing to the final edit.");
       return;
     }
     setDirectorStage("edit");
@@ -306,7 +305,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
     if (stage === "plan") return directorPlan?.planningBasis === "professional-treatment";
     if (stage === "images") return Boolean(directorPlan?.approvedAt);
     if (stage === "takes" || stage === "clips") return Boolean(directorPlan?.approvedAt);
-    if (stage === "edit") return videoTakesReady;
+    if (stage === "edit") return videoTakesReady && Boolean(directorPlan?.shots.every((shot) => shot.videoApproved));
     if (stage === "final") return Boolean(directorFinalUrl);
     return false;
   };
@@ -338,7 +337,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
 
       <nav className="director-stepper director-stepper-scroll" aria-label="Professional music video stages">
         {STEPS.map(({ label, stage }) => {
-          const enabled = canOpenStage(stage);
+          const enabled = !busy && canOpenStage(stage);
           return (
             <button
               type="button"
@@ -774,6 +773,22 @@ function TreatmentStep({
   );
 }
 
+function ShotLength({ plan, index, disabled }: { plan: DirectorPlan; index: number; disabled: boolean }) {
+  const shot = plan.shots[index]!;
+  const [seconds, setSeconds] = useState(String(Number((shot.end - shot.start).toFixed(3))));
+  const [error, setError] = useState("");
+  const neighbor = plan.shots[index + 1] ?? plan.shots[index - 1];
+  const max = neighbor ? Math.max(shot.end, neighbor.end) - Math.min(shot.start, neighbor.start) - 0.5 : 0;
+  return <div className="director-field">
+    <label>Shot {index + 1} length (seconds) <input aria-label={`Shot ${index + 1} length (seconds)`} type="number" min={0.5} max={max} step="any" value={seconds} disabled={disabled || !neighbor} onChange={(event) => setSeconds(event.target.value)} /></label>
+    <button type="button" className="btn" disabled={disabled || !neighbor} onClick={() => {
+      try { useStore.getState().setDirectorShotDuration(shot.id, Number(seconds)); setError(""); } catch (err) { setError(getErrorMessage(err)); }
+    }}>Apply length</button>
+    <small>{neighbor ? `Adjusts the ${index + 1 < plan.shots.length ? "next" : "previous"} shot to keep the song covered. Both affected takes need regeneration.` : "This single shot covers the song. Use Final Edit to shorten the export."}</small>
+    {error && <p role="alert">{error}</p>}
+  </div>;
+}
+
 function PlanStep({
   plan,
   onApprove,
@@ -783,24 +798,34 @@ function PlanStep({
   onApprove: () => void;
   onBack: () => void;
 }) {
+  const clips = useStore((state) => state.clips);
+  const bible = useStore((state) => state.productionBible);
+  const active = clips.some((clip) => clip.status === "queued" || clip.status === "generating") || plan.shots.some((shot) => shot.imageStatus === "generating");
+  const [casting, setCasting] = useState(bible?.characterProfile ?? "");
   return (
     <section className="director-panel">
       <div className="director-section-heading">
         <span className="director-step-number">5</span>
         <div><h2>Shot Plan</h2><p>{plan.shots.length} timed shots will become storyboard images and Agnes video takes.</p></div>
       </div>
+      <label className="director-field"><span>Cast and character appearance</span>
+        <textarea disabled={active} value={casting} onChange={(event) => setCasting(event.target.value)} placeholder="Describe the intended cast, appearance and number of distinct people. Add locked reference images in the advanced editor." />
+        <button type="button" className="btn" disabled={active || casting === (bible?.characterProfile ?? "")} onClick={() => useStore.getState().updateDirectorBible({ characterProfile: casting })}>Apply casting — rebuild storyboard</button>
+      </label>
+      <p>Review subject count, seating and one clear action per shot. Shot length changes keep the full song timing intact.</p>
       <div className="director-understanding-block">
         {plan.shots.map((shot, index) => (
           <div className="director-section-map-row" key={shot.id}>
             <strong>{index + 1}. {formatTime(shot.start)}–{formatTime(shot.end)} · {shot.role}{shot.hero ? " · HERO" : ""}</strong>
             <p>{shot.idea}</p>
             <span>{shot.camera} · {shot.framing} · {shot.mood}</span>
+            <ShotLength key={`${shot.id}-${shot.start}-${shot.end}`} plan={plan} index={index} disabled={active} />
           </div>
         ))}
       </div>
       <div className="director-approval-bar">
         <button type="button" className="btn ghost" onClick={onBack}>Back to Treatment</button>
-        <button type="button" className="director-primary" onClick={onApprove}>{plan.approvedAt ? "Plan Approved" : "Approve Plan & Generate Images"}</button>
+        <button type="button" className="director-primary" disabled={active} onClick={onApprove}>{plan.approvedAt ? "Plan Approved" : "Approve Plan & Generate Images"}</button>
       </div>
     </section>
   );
@@ -820,25 +845,35 @@ function ImagesStep({
   onBack: () => void;
 }) {
   const ready = plan.shots.filter((shot) => shot.imageStatus === "ready" && shot.imageUrl).length;
-  const allReady = ready === plan.shots.length;
+  const allReady = ready === plan.shots.length && plan.shots.every((shot) => shot.imageApproved);
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const [retryError, setRetryError] = useState("");
+  const activeClips = useStore((state) => state.clips.some((clip) => clip.status === "queued" || clip.status === "generating"));
+  const imageBusy = busy === "images" || retrying !== null || activeClips;
   return (
     <section className="director-panel">
       <div className="director-section-heading">
         <span className="director-step-number">6</span>
-        <div><h2>Storyboard Images</h2><p>{ready}/{plan.shots.length} storyboard frames ready.</p></div>
+        <div><h2>Storyboard Images</h2><p>{ready}/{plan.shots.length} storyboard frames ready. Check for duplicated people, correct seating, cast and composition before approving each frame.</p></div>
       </div>
       <div className="director-understanding-grid">
         {plan.shots.map((shot) => (
           <div className="director-stage-card" key={shot.id}>
             <strong>{shot.role} · {formatTime(shot.start)}–{formatTime(shot.end)}</strong>
             {shot.imageUrl ? <img src={shot.imageUrl} alt={shot.role} style={{ width: "100%", borderRadius: 8 }} /> : <p>{shot.imageStatus === "failed" ? shot.imageError ?? "Image generation failed." : "Waiting for storyboard image."}</p>}
+            <label><input type="checkbox" checked={shot.imageApproved} disabled={imageBusy || shot.imageStatus !== "ready" || !shot.imageUrl} onChange={(event) => useStore.getState().approveDirectorImage(shot.id, event.target.checked)} /> I reviewed this image</label>
+            <button type="button" className="btn" disabled={imageBusy} onClick={async () => {
+              setRetrying(shot.id); setRetryError("");
+              try { await generateStoryboardImage(shot.id); } catch (err) { setRetryError(getErrorMessage(err)); } finally { setRetrying(null); }
+            }}>{retrying === shot.id ? "Generating replacement…" : "Generate another image"}</button>
           </div>
         ))}
       </div>
+      {retryError && <p role="alert">{retryError}</p>}
       <div className="director-approval-bar">
-        <button type="button" className="btn ghost" onClick={onBack}>Back to Plan</button>
-        <button type="button" className="btn" disabled={busy === "images"} onClick={onGenerate}>{busy === "images" ? "Generating Images…" : ready ? "Generate Missing Images" : "Generate Storyboard Images"}</button>
-        <button type="button" className="director-primary" disabled={!allReady || busy === "images"} onClick={onContinue}>Approve Images & Generate Video</button>
+        <button type="button" className="btn ghost" disabled={imageBusy} onClick={onBack}>Back to Plan</button>
+        <button type="button" className="btn" disabled={imageBusy} onClick={onGenerate}>{busy === "images" ? "Generating Images…" : ready ? "Generate Missing Images" : "Generate Storyboard Images"}</button>
+        <button type="button" className="director-primary" disabled={!allReady || imageBusy} onClick={onContinue}>Continue to Video Takes</button>
       </div>
     </section>
   );
@@ -859,6 +894,7 @@ function TakesStep({
   onContinue: () => void;
   onBack: () => void;
 }) {
+  const [retryError, setRetryError] = useState("");
   const readyCount = plan.shots.filter((shot) => clips.find((clip) => clip.id === shot.clipId)?.status === "ready").length;
   const active = plan.shots.some((shot) => {
     const status = clips.find((clip) => clip.id === shot.clipId)?.status;
@@ -868,7 +904,7 @@ function TakesStep({
     <section className="director-panel">
       <div className="director-section-heading">
         <span className="director-step-number">7</span>
-        <div><h2>Agnes Video Takes</h2><p>{readyCount}/{plan.shots.length} generated video takes ready.</p></div>
+        <div><h2>Agnes Video Takes</h2><p>{readyCount}/{plan.shots.length} generated video takes ready. Watch each take: one instance of each person, correct seating, natural movement, and the right scene.</p></div>
       </div>
       <div className="director-understanding-block">
         {plan.shots.map((shot) => {
@@ -876,17 +912,22 @@ function TakesStep({
           return (
             <div className="director-section-map-row" key={shot.id}>
               <strong>{shot.role} · {formatTime(shot.start)}–{formatTime(shot.end)}</strong>
-              <span>Status: {clip?.status ?? "empty"}</span>
+              <span>Status: {clip?.status === "queued" ? "Waiting in the Agnes queue" : clip?.status === "generating" ? "Waiting for Agnes to finish this take" : clip?.status === "ready" ? "Ready for your review" : clip?.status ?? "empty"}</span>
               {clip?.lastError && <p>{clip.lastError}</p>}
               {clip?.videoUrl && <video src={clip.videoUrl} controls muted playsInline style={{ width: "100%", maxWidth: 520 }} />}
+              <label><input type="checkbox" checked={shot.videoApproved} disabled={clip?.status !== "ready" || !clip.videoUrl} onChange={(event) => useStore.getState().approveDirectorClip(shot.id, event.target.checked)} /> I watched and approve this take</label>
+              <button type="button" className="btn" disabled={active} onClick={() => {
+                try { regenerateDirectorVideo(shot.id); setRetryError(""); } catch (err) { setRetryError(getErrorMessage(err)); }
+              }}>Generate another take</button>
             </div>
           );
         })}
       </div>
+      {retryError && <p role="alert">{retryError}</p>}
       <div className="director-approval-bar">
-        <button type="button" className="btn ghost" onClick={onBack}>Back to Images</button>
+        <button type="button" className="btn ghost" disabled={active} onClick={onBack}>Back to Images</button>
         <button type="button" className="btn" disabled={active} onClick={onGenerate}>{active ? "Agnes Generating…" : readyCount ? "Generate Missing Takes" : "Generate Agnes Video Takes"}</button>
-        <button type="button" className="director-primary" disabled={!allReady} onClick={onContinue}>Approve Takes & Final Edit</button>
+        <button type="button" className="director-primary" disabled={!allReady || !plan.shots.every((shot) => shot.videoApproved)} onClick={onContinue}>Continue to Final Edit</button>
       </div>
     </section>
   );
@@ -901,6 +942,14 @@ function EditStep({
   onRender: () => void;
   onBack: () => void;
 }) {
+  const duration = useStore((state) => state.analysis?.duration ?? 0);
+  const savedLength = useStore((state) => state.directorPlan?.exportDuration);
+  const [length, setLength] = useState(String(savedLength ?? duration));
+  const [lengthError, setLengthError] = useState("");
+  const applyLength = (value: number) => {
+    try { useStore.getState().setDirectorExportDuration(value === duration ? undefined : value); setLength(String(value)); setLengthError(""); }
+    catch (err) { setLengthError(getErrorMessage(err)); }
+  };
   return (
     <section className="director-panel">
       <div className="director-section-heading">
@@ -908,12 +957,18 @@ function EditStep({
         <div><h2>Final Edit</h2><p>Combine the approved video takes with the original uploaded song as the final soundtrack.</p></div>
       </div>
       <div className="director-stage-card director-stage-approved">
-        <strong>Ready to render</strong>
+        <strong>Final video length</strong>
+        <label>Seconds <input aria-label="Final video length (seconds)" type="number" min={0.5} max={duration} step="any" disabled={busy === "render"} value={length} onChange={(event) => setLength(event.target.value)} /></label>
+        <button type="button" className="btn" disabled={busy === "render"} onClick={() => applyLength(Number(length))}>Apply length</button>
+        {[15, 30, 60].filter((seconds) => seconds <= duration).map((seconds) => <button key={seconds} type="button" className="btn" disabled={busy === "render"} onClick={() => applyLength(seconds)}>{seconds}s</button>)}
+        <button type="button" className="btn" disabled={busy === "render"} onClick={() => applyLength(duration)}>Full song</button>
+        <p>Export the first {(savedLength ?? duration).toFixed(2)} seconds. The song and video are trimmed together; playback speed stays natural.</p>
+        {lengthError && <p role="alert">{lengthError}</p>}
         <p>Generated clip audio is discarded. The original song remains the final music track.</p>
       </div>
       <div className="director-approval-bar">
         <button type="button" className="btn ghost" onClick={onBack}>Back to Takes</button>
-        <button type="button" className="director-primary" disabled={busy === "render"} onClick={onRender}>{busy === "render" ? "Rendering…" : "Render Final Music Video"}</button>
+        <button type="button" className="director-primary" disabled={busy === "render" || Number(length) !== (savedLength ?? duration)} onClick={onRender}>{busy === "render" ? "Rendering…" : "Render Final Music Video"}</button>
       </div>
     </section>
   );

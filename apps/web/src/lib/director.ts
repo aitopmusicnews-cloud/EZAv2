@@ -171,6 +171,27 @@ export function directorScenePrompt(shot: DirectorShot): string {
   ].join(" ");
 }
 
+/** Move a shared cut, preserving total song coverage and all unrelated cuts. */
+export function resizeDirectorShot(shots: DirectorShot[], id: string, seconds: number): DirectorShot[] {
+  const index = shots.findIndex((shot) => shot.id === id);
+  if (index < 0 || shots.length < 2) throw new Error("This plan needs at least two shots to move a cut.");
+  if (!Number.isFinite(seconds) || seconds < 0.5) throw new Error("Shot length must be at least 0.5 seconds.");
+  const shot = shots[index]!;
+  const next = shots[index + 1];
+  const neighbor = next ?? shots[index - 1]!;
+  const boundary = next ? shot.start + seconds : shot.end - seconds;
+  const available = next ? neighbor.end - shot.start : shot.end - neighbor.start;
+  if (seconds > available - 0.5) throw new Error(`Leave at least 0.5 seconds for the neighboring shot (maximum ${(available - 0.5).toFixed(2)}s).`);
+  return shots.map((item) => {
+    if (item.id !== id && item.id !== neighbor.id) return item;
+    return {
+      ...item,
+      ...(item.id === id ? (next ? { end: boundary } : { start: boundary }) : (next ? { start: boundary } : { end: boundary })),
+      videoApproved: false,
+    };
+  });
+}
+
 export function createDirectorPlan(
   analysis: AudioAnalysis,
   vision: string,

@@ -162,6 +162,7 @@ export const DirectorPlan = z.object({
   treatment: DirectorTreatment,
   shots: z.array(DirectorShot).min(1),
   approvedAt: z.number().optional(),
+  exportDuration: z.number().finite().positive().optional(),
 });
 export type DirectorPlan = z.infer<typeof DirectorPlan>;
 
