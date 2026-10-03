@@ -89,7 +89,9 @@ async function fetchAgnesWithRetry(
     const retryAfter = Number(response.headers.get("retry-after"));
     const delayMs = Number.isFinite(retryAfter) && retryAfter >= 0
       ? Math.min(65_000, retryAfter * 1000)
-      : RETRY_DELAYS_MS[attempt]!;
+      : response.status === 429
+        ? 31_000
+        : RETRY_DELAYS_MS[attempt]!;
     await sleepImpl(delayMs);
   }
   throw new Error("unreachable");
