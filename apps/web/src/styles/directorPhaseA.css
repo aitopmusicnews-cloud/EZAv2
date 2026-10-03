@@ -169,3 +169,28 @@
     grid-template-columns: 1fr;
   }
 }
+
+.director-section-map-row input[type="checkbox"],
+.director-stage-card input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--accent);
+  margin-right: 8px;
+}
+
+.director-section-map-row > label,
+.director-stage-card > label {
+  display: block;
+  margin: 12px 0;
+}
+
+.director-stage-card input[type="number"] {
+  width: 140px;
+  max-width: 100%;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  padding: 10px 12px;
+}
+
+.director-stage-card > .btn { margin: 4px 6px 4px 0; }

@@ -98,7 +98,7 @@ async function resumeClipPoll(clipId: string, taskId: string): Promise<void> {
       : 900_000;
     const final = await pollTask(taskId, 5000, timeoutMs);
     const currentClip = useStore.getState().clips.find((item) => item.id === clipId);
-    if (currentClip?.generationTaskId && currentClip.generationTaskId !== taskId) {
+    if (!currentClip || currentClip.generationTaskId !== taskId) {
       console.warn("Ignoring stale resumed generation completion because the clip has a newer task");
       return;
     }
@@ -120,7 +120,7 @@ async function resumeClipPoll(clipId: string, taskId: string): Promise<void> {
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     const currentClip = useStore.getState().clips.find((item) => item.id === clipId);
-    const ownsClip = !currentClip?.generationTaskId || currentClip.generationTaskId === taskId;
+    const ownsClip = currentClip?.generationTaskId === taskId;
     if (!ownsClip) return;
     if (currentClip?.status === "ready" && currentClip.videoUrl) return;
     useStore.getState().updateClip(clipId, { status: "failed", lastError: reason });
@@ -265,6 +265,7 @@ async function run(jobId: string): Promise<void> {
       return;
     }
     const task = await startTask(job);
+    if (!useStore.getState().jobs.some((item) => item.id === jobId)) return;
     setJobPatch(jobId, { taskId: task.id });
     useStore.getState().updateClip(job.clipId, { generationTaskId: task.id });
     if (isCancelled(jobId)) {
@@ -278,6 +279,10 @@ async function run(jobId: string): Promise<void> {
       return;
     }
     const videoUrl = taskOutputUrl(final);
+    if (useStore.getState().clips.find((item) => item.id === job.clipId)?.generationTaskId !== task.id) {
+      setJobPatch(jobId, { state: "cancelled", completedAt: Date.now() });
+      return;
+    }
     if (!taskSucceeded(final) || !videoUrl) {
       throw new Error(final.error ?? `task ended in ${final.status} with no video`);
     }
@@ -300,7 +305,7 @@ async function run(jobId: string): Promise<void> {
     setJobPatch(jobId, { state: "failed", error: reason, completedAt: Date.now() });
     const currentJob = useStore.getState().jobs.find((item) => item.id === jobId);
     const currentClip = useStore.getState().clips.find((item) => item.id === job.clipId);
-    const ownsClip = !currentJob?.taskId || !currentClip?.generationTaskId || currentClip.generationTaskId === currentJob.taskId;
+    const ownsClip = Boolean(currentJob && currentClip && (currentJob.taskId ? currentClip.generationTaskId === currentJob.taskId : currentClip.status === "generating"));
     if (!ownsClip) {
       console.warn("Ignoring stale generation failure because the clip has a newer task");
     } else if (currentClip?.status === "ready" && currentClip.videoUrl) {

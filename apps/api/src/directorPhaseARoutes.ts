@@ -5,6 +5,7 @@ import {
   AudioAnalysis,
   SongUnderstanding,
   SongUnderstandingRequest,
+  ProductionBible,
   TranscribeSongRequest,
 } from "@mvs/shared";
 import { config } from "./config.js";
@@ -92,6 +93,7 @@ export async function directorPhaseARoutes(app: FastifyInstance, options: Direct
     analysis: AudioAnalysis,
     understanding: SongUnderstanding,
     vision: z.string().max(4000).default(""),
+    productionBible: ProductionBible.optional(),
   });
 
   app.post("/api/director/treatment", { config: { rateLimit: { max: 4, timeWindow: "1 minute" } } }, async (req, reply) => {

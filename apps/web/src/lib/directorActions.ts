@@ -19,7 +19,9 @@ export async function generateStoryboardImage(shotId: string): Promise<string> {
   const plan = approvedPlan();
   const shot = plan.shots.find((item) => item.id === shotId);
   if (!shot) throw new Error("Director shot not found.");
+  if (shot.imageStatus === "generating" || state.clips.some((clip) => clip.status === "generating" || clip.status === "queued")) throw new Error("Wait for active generation before replacing a storyboard image.");
   state.setDirectorShotImage(shotId, { status: "generating" });
+  const pendingShot = useStore.getState().directorPlan?.shots.find((item) => item.id === shotId);
   try {
     const request = compileDirectorImageRequest(
       shot,
@@ -27,11 +29,14 @@ export async function generateStoryboardImage(shotId: string): Promise<string> {
       state.referenceAssets,
     );
     const image = await generateTextToImage(request);
+    if (useStore.getState().directorPlan?.id !== plan.id || useStore.getState().directorPlan?.shots.find((item) => item.id === shotId) !== pendingShot) {
+      throw new Error("The plan changed while this image was generating. Generate a new image for the current shot.");
+    }
     useStore.getState().setDirectorShotImage(shotId, { status: "ready", url: image.url });
     return image.url;
   } catch (error) {
     const message = getErrorMessage(error);
-    useStore.getState().setDirectorShotImage(shotId, { status: "failed", error: message });
+    if (useStore.getState().directorPlan?.shots.find((item) => item.id === shotId) === pendingShot) useStore.getState().setDirectorShotImage(shotId, { status: "failed", error: message });
     throw new Error(`Storyboard image failed for ${shot.role}: ${message}`);
   }
 }
@@ -67,6 +72,8 @@ export function regenerateDirectorVideo(shotId: string): string {
   }
   const clip = state.clips.find((item) => item.id === shot.clipId);
   if (!clip) throw new Error("Director timeline clip not found.");
+  if (clip.status === "queued" || clip.status === "generating") throw new Error("This take is already queued or generating.");
+  state.setDirectorFinalUrl(null);
   const compiled = compileDirectorVideoRequest(shot, state.productionBible ?? {}, state.referenceAssets);
   state.approveDirectorClip(shotId, false);
   state.updateClip(clip.id, {
@@ -129,14 +136,16 @@ export async function renderDirectorFinal(
   const state = useStore.getState();
   const plan = approvedPlan();
   if (!state.audioUrl || !state.analysis) throw new Error("The project song is missing.");
+  const duration = plan.exportDuration ?? state.analysis.duration;
+  if (!Number.isFinite(duration) || duration < 0.5 || duration > state.analysis.duration) throw new Error("Choose an export length within the song duration.");
   const missingApproval = plan.shots.filter((shot) => !shot.videoApproved);
   if (missingApproval.length) {
     throw new Error(`Approve all generated clips before final render (${missingApproval.length} remaining).`);
   }
-  const clips = plan.shots.map((shot) => {
+  const clips = plan.shots.filter((shot) => shot.start < duration).map((shot) => {
     const clip = state.clips.find((item) => item.id === shot.clipId);
     if (!clip?.videoUrl || clip.status !== "ready") throw new Error(`Approved clip is not ready: ${shot.role}.`);
-    return { start: shot.start, end: shot.end, videoUrl: clip.videoUrl, source: clip.source };
+    return { start: shot.start, end: Math.min(shot.end, duration), videoUrl: clip.videoUrl, source: clip.source };
   });
   let projectId = state.projectId;
   if (!projectId) {
@@ -147,12 +156,14 @@ export async function renderDirectorFinal(
     {
       projectId,
       audioUrl: state.audioUrl,
-      duration: state.analysis.duration,
+      duration,
       clips,
       fades: false,
     },
     { onUpdate },
   );
+  const currentPlan = useStore.getState().directorPlan;
+  if (currentPlan?.id !== plan.id || currentPlan.shots !== plan.shots || currentPlan.exportDuration !== plan.exportDuration) throw new Error("The project changed during rendering. Render the current edit again.");
   useStore.getState().setDirectorFinalUrl(result.url);
   useStore.getState().setDirectorStage("final");
   return result.url;

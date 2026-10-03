@@ -61,6 +61,7 @@ export async function requestProfessionalTreatment(req: {
   analysis: AudioAnalysis;
   understanding: SongUnderstanding;
   vision: string;
+  productionBible?: ProductionBible;
 }): Promise<{ plan: DirectorPlan; productionBible: ProductionBible }> {
   return jsonOrThrow(await fetch("/api/director/treatment", {
     method: "POST",

@@ -85,4 +85,21 @@ describe("scheduler production controls", () => {
       prompt: "[HARD SPATIAL CONSTRAINTS] left-hand-drive\n\n[SCENE] mirror shot",
     }));
   });
+  it("ignores an older task result and releases the queue slot", async () => {
+    vi.useFakeTimers();
+    try {
+      let finish!: (value: { status: string; output: string[] }) => void;
+      mocks.pollTask.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+      const jobId = enqueueGeneration({ clipId: "clip-1", source: "imageToVideo", seedImageUrl: "https://cdn.example.com/start.png", prompt: "one person", duration: 8, sectionLabel: "verse", energy: 0.5 });
+      await vi.advanceTimersByTimeAsync(31_000);
+      expect(mocks.pollTask).toHaveBeenCalledOnce();
+      useStore.getState().updateClip("clip-1", { generationTaskId: "replacement-task", status: "ready", videoUrl: "https://cdn.example.com/replacement.mp4" });
+      finish({ status: "SUCCEEDED", output: ["https://cdn.example.com/obsolete.mp4"] });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(useStore.getState().clips[0]?.videoUrl).toBe("https://cdn.example.com/replacement.mp4");
+      expect(useStore.getState().jobs.find((job) => job.id === jobId)?.state).toBe("cancelled");
+      expect(mocks.saveClipToServer).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
 });

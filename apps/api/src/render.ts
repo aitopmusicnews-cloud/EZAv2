@@ -118,6 +118,7 @@ export async function renderTimeline(req: RenderRequest): Promise<{ url: string 
     "-pix_fmt", "yuv420p",
     "-c:a", "aac",
     "-movflags", "+faststart",
+    "-t", String(req.duration),
     "-shortest",
     "-y",
     outputPath,

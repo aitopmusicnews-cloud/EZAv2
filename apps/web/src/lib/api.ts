@@ -31,7 +31,7 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
     const text = await res.text();
     let parsed: { error?: string; rateLimited?: boolean } | null = null;
     try { parsed = JSON.parse(text); } catch {}
-    const msg = parsed?.error ?? text;
+    const msg = parsed?.error?.trim() || text.trim() || `Request failed (HTTP ${res.status}). Please retry; if it continues, check the server logs.`;
     throw new ApiError(res.status, msg, parsed?.rateLimited === true);
   }
   return res.json() as Promise<T>;
@@ -204,7 +204,7 @@ export async function renderTimeline(
     const job = await getRenderJob(renderId);
     opts.onUpdate?.(job);
     if (job.state === "succeeded" && job.url) return { url: job.url };
-    if (job.state === "failed") throw new Error(job.error ?? "render failed");
+    if (job.state === "failed") throw new Error(job.error?.trim() || `Render ${renderId} failed without an error message. Check the server logs for this render ID.`);
     await new Promise((r) => setTimeout(r, intervalMs));
   }
   throw new Error("render timed out");
