@@ -29,9 +29,14 @@ vi.mock("./toast.js", () => ({
 }));
 
 import { useStore } from "./store.js";
-import { enqueueGeneration } from "./scheduler.js";
+import { AGNES_MIN_CREATE_INTERVAL_MS, MAX_CONCURRENT, enqueueGeneration } from "./scheduler.js";
 
 describe("scheduler production controls", () => {
+  it("paces Agnes video submissions for the free/default provider limit", () => {
+    expect(MAX_CONCURRENT).toBe(1);
+    expect(AGNES_MIN_CREATE_INTERVAL_MS).toBeGreaterThanOrEqual(60_000);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     useStore.setState({
