@@ -41,8 +41,9 @@ const TREATMENT_SCHEMA = {
     productionBible: {
       type: "object",
       additionalProperties: false,
-      required: ["wardrobeProfile", "locationProfile", "stylePrompt", "colorPalette", "continuityPrompt", "negativePrompt"],
+      required: ["characterProfile", "wardrobeProfile", "locationProfile", "stylePrompt", "colorPalette", "continuityPrompt", "negativePrompt"],
       properties: {
+        characterProfile: { type: "string" },
         wardrobeProfile: { type: "string" },
         locationProfile: { type: "string" },
         stylePrompt: { type: "string" },
@@ -80,6 +81,9 @@ Rules:
 - Ground story claims in the supplied Song Understanding. Never invent lyric facts that are not present.
 - Use the artist/director vision when supplied, but preserve stated uncertainty instead of pretending certainty.
 - Make each shot specific enough for image generation and image-to-video generation.
+- Casting is a Director decision: define a concrete character/cast profile before storyboard generation instead of relying on image-model defaults.
+- Follow any character identity, demographic traits, or appearance explicitly supplied by the Artist / Director Vision or reference images. Do not infer race or ethnicity from lyrics, genre, location, or music style.
+- When demographic traits are not supplied, do not default to one ethnicity or repeated demographic template. Keep casting direction project-specific and describe stable visual identity markers such as role, apparent age range, presentation, hair, build, wardrobe, and recurring features.
 - Maintain visual continuity across recurring characters, wardrobe, locations, props, palette, and lighting.
 - Vary framing and camera movement so the finished edit does not feel repetitive.
 - Reserve hero=true for a small number of strongest payoff shots.
