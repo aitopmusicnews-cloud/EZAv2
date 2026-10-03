@@ -30,6 +30,7 @@ import { saveClip, listClips, deleteClip } from "./clips.js";
 import { saveImage, listImages, deleteImage } from "./images.js";
 import { saveFolder, listFolders, deleteFolder } from "./folders.js";
 import { directorPhaseARoutes } from "./directorPhaseARoutes.js";
+import { promoDirectorRoutes } from "./promoDirectorRoutes.js";
 import {
   ImageToVideoRequest,
   KeyframeToVideoRequest,
@@ -60,6 +61,7 @@ await app.register(cors, {
 await app.register(rateLimit, { max: 200, timeWindow: "1 minute" });
 await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024 } });
 await app.register(directorPhaseARoutes);
+await app.register(promoDirectorRoutes);
 await app.register(fastifyStatic, {
   root: join(process.cwd(), config.STORAGE_DIR),
   prefix: "/storage/",

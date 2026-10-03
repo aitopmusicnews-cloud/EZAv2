@@ -368,3 +368,11 @@ export async function renderPromoTimeline(
   }
   throw new Error("promo render timed out");
 }
+import type { PromoDirectorRequest, PromoDirectorPlan, PromoSpeechRequest } from "@mvs/shared";
+
+export async function planPromo(request: PromoDirectorRequest): Promise<PromoDirectorPlan> {
+  return jsonOrThrow(await fetch("/api/promo/director/plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request) }));
+}
+export async function speakPromo(request: PromoSpeechRequest): Promise<{ url: string; duration: number }> {
+  return jsonOrThrow(await fetch("/api/promo/director/speech", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request) }));
+}

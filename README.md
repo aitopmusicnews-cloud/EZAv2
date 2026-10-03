@@ -1,5 +1,9 @@
 # Music Video Studio — Agnes Video V2.0
 
+## AI Promo Director
+
+Promo Mode now includes an editable AI brief-to-scene-plan workflow, revisions, per-scene Agnes image generation, OpenAI or Azure-hosted narration, draft recovery and pre-export checks. See [Promo Director setup and usage](docs/PROMO-DIRECTOR.md), including Azure model deployment settings. The existing music-video Director is a separate workflow.
+
 This is the original Music Video Studio codebase, converted so **Agnes Video V2.0 is the only active AI video generator**.
 
 ## Workflow
