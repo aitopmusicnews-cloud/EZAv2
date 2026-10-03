@@ -478,7 +478,7 @@ const PromoVoiceoverBody = z.object({
 });
 
 app.post("/api/promo/voiceover", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
-  if (!config.AZURE_OPENAI_TTS_ENDPOINT || !config.AZURE_OPENAI_TTS_API_KEY) {
+  if (!config.AZURE_OPENAI_TTS_ENDPOINT || !(config.AZURE_OPENAI_TTS_API_KEY || config.AZURE_OPENAI_MAIN_API_KEY)) {
     return reply.code(503).send({ error: "Azure promo voiceover is not configured." });
   }
   const body = PromoVoiceoverBody.parse(req.body);
