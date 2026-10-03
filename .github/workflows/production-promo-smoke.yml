@@ -1,0 +1,235 @@
+name: Production Promo Smoke
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/production-promo-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ezcopyrights-promo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EZAV2_BASE_URL: https://ezav2.onrender.com
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install smoke-test dependencies
+        run: python -m pip install --disable-pip-version-check pillow requests
+
+      - name: Render EZ Way Copyrights promo through production
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p smoke-output
+          python - <<'PY'
+          import json
+          import os
+          import time
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          import requests
+          from PIL import Image, ImageDraw, ImageFont
+
+          base = os.environ["EZAV2_BASE_URL"].rstrip("/")
+          out = Path("smoke-output")
+          out.mkdir(exist_ok=True)
+
+          font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+          font_regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+          slides = [
+              ("YOU MADE THE SONG.", "CAN YOU PROVE IT?"),
+              ("CREATE A RECORD", "OF EVIDENCE"),
+              ("UNDER 3 MINUTES", "SIMPLE. FAST. FOR CREATORS."),
+              ("$25 / MONTH", "5 RECORDS INCLUDED"),
+              ("DOWNLOAD & KEEP", "YOUR OWN COPY"),
+              ("EZ WAY COPYRIGHTS", "PROTECT THE WORK. KEEP THE PROOF."),
+          ]
+
+          def fit_font(text, max_width, start=112, minimum=48):
+              size = start
+              while size >= minimum:
+                  font = ImageFont.truetype(font_bold, size)
+                  box = font.getbbox(text)
+                  if box[2] - box[0] <= max_width:
+                      return font
+                  size -= 4
+              return ImageFont.truetype(font_bold, minimum)
+
+          def make_slide(index, top, bottom):
+              w, h = 1080, 1920
+              img = Image.new("RGB", (w, h), (12, 12, 16))
+              draw = ImageDraw.Draw(img)
+
+              # Gold/amber accent bars and subtle depth.
+              draw.rectangle((0, 0, w, 34), fill=(215, 163, 63))
+              draw.rectangle((0, h - 34, w, h), fill=(215, 163, 63))
+              draw.rounded_rectangle((70, 180, 1010, 1740), radius=48, outline=(70, 70, 78), width=3)
+              draw.text((90, 230), "EZ WAY", font=ImageFont.truetype(font_bold, 58), fill=(215, 163, 63))
+              draw.text((90, 305), "COPYRIGHTS", font=ImageFont.truetype(font_bold, 58), fill=(245, 245, 245))
+
+              top_font = fit_font(top, 900, 118)
+              bottom_font = fit_font(bottom, 900, 92)
+
+              top_box = draw.multiline_textbbox((0, 0), top, font=top_font, spacing=18, align="center")
+              top_w = top_box[2] - top_box[0]
+              top_h = top_box[3] - top_box[1]
+              draw.multiline_text(((w - top_w) / 2, 690 - top_h / 2), top, font=top_font, fill=(255, 255, 255), spacing=18, align="center")
+
+              bottom_box = draw.multiline_textbbox((0, 0), bottom, font=bottom_font, spacing=16, align="center")
+              bottom_w = bottom_box[2] - bottom_box[0]
+              bottom_h = bottom_box[3] - bottom_box[1]
+              draw.multiline_text(((w - bottom_w) / 2, 1110 - bottom_h / 2), bottom, font=bottom_font, fill=(215, 163, 63), spacing=16, align="center")
+
+              if index == 4:
+                  note = "Not a U.S. Copyright Office submission."
+                  note_font = ImageFont.truetype(font_regular, 42)
+                  note_box = draw.textbbox((0, 0), note, font=note_font)
+                  draw.text(((w - (note_box[2] - note_box[0])) / 2, 1550), note, font=note_font, fill=(180, 180, 186))
+
+              path = out / f"scene-{index+1}.png"
+              img.save(path, "PNG")
+              return path
+
+          session = requests.Session()
+          session.headers.update({"User-Agent": "EZAv2-production-smoke/1.0"})
+
+          health = session.get(f"{base}/health", timeout=30)
+          health.raise_for_status()
+
+          image_urls = []
+          for i, (top, bottom) in enumerate(slides):
+              path = make_slide(i, top, bottom)
+              with path.open("rb") as fh:
+                  resp = session.post(
+                      f"{base}/api/images/upload",
+                      files={"file": (path.name, fh, "image/png")},
+                      timeout=60,
+                  )
+              if resp.status_code != 200:
+                  raise RuntimeError(f"image upload {i+1} failed ({resp.status_code}): {resp.text[:500]}")
+              image_urls.append(resp.json()["url"])
+
+          script = (
+              "You made the track. But if someone borrows it, can you prove when it was yours? "
+              "EZ Way Copyrights helps creators make a timestamped record of evidence in under three minutes. "
+              "Your plan is twenty-five dollars a month and includes five records of evidence. "
+              "Download and keep your own copy. It is not a U.S. Copyright Office filing. "
+              "It is a simple modern record of evidence for creators. "
+              "EZ Way Copyrights. Protect the work. Keep the proof."
+          )
+
+          voice = session.post(
+              f"{base}/api/promo/voiceover",
+              json={"text": script, "speed": 1},
+              timeout=90,
+          )
+          if voice.status_code != 200:
+              raise RuntimeError(f"voiceover failed ({voice.status_code}): {voice.text[:1000]}")
+          voice_data = voice.json()
+
+          render_payload = {
+              "projectId": f"ezcopyrights-smoke-{int(time.time())}",
+              "duration": 30,
+              "aspectRatio": "9:16",
+              "scenes": [
+                  {
+                      "url": url,
+                      "kind": "image",
+                      "duration": 5,
+                      "motion": "push-in" if i % 2 == 0 else "zoom-out",
+                      "fit": "cover",
+                      "focalX": 50,
+                      "focalY": 50,
+                  }
+                  for i, url in enumerate(image_urls)
+              ],
+              "textOverlays": [],
+              "voiceoverUrl": voice_data["url"],
+              "musicVolume": 0.28,
+              "voiceoverVolume": 1,
+              "duckMusic": False,
+          }
+
+          submitted = session.post(f"{base}/api/promo/render", json=render_payload, timeout=60)
+          if submitted.status_code != 200:
+              raise RuntimeError(f"render submit failed ({submitted.status_code}): {submitted.text[:1000]}")
+          render_id = submitted.json()["renderId"]
+
+          deadline = time.time() + 12 * 60
+          final_url = None
+          last = None
+          while time.time() < deadline:
+              job = session.get(f"{base}/api/promo/render/jobs/{render_id}", timeout=30)
+              if job.status_code != 200:
+                  raise RuntimeError(f"render poll failed ({job.status_code}): {job.text[:1000]}")
+              last = job.json()
+              state = last.get("state")
+              print(f"render state: {state}")
+              if state == "succeeded" and last.get("url"):
+                  final_url = last["url"]
+                  break
+              if state == "failed":
+                  raise RuntimeError(f"render failed: {last.get('error')}")
+              time.sleep(5)
+
+          if not final_url:
+              raise TimeoutError(f"render did not finish: {last}")
+
+          mp4 = session.get(final_url, timeout=120)
+          mp4.raise_for_status()
+          if len(mp4.content) < 10000:
+              raise RuntimeError(f"rendered MP4 is unexpectedly small: {len(mp4.content)} bytes")
+          (out / "ezcopyrights-production-smoke.mp4").write_bytes(mp4.content)
+
+          result = {
+              "ok": True,
+              "product": "EZ Way Copyrights",
+              "renderId": render_id,
+              "renderUrl": final_url,
+              "voice": voice_data.get("voice"),
+              "generatedAt": datetime.now(timezone.utc).isoformat(),
+              "sourceCommit": os.environ.get("GITHUB_SHA"),
+              "bytes": len(mp4.content),
+          }
+          (out / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+          print("PRODUCTION_PROMO_URL=" + final_url)
+          PY
+
+      - name: Publish smoke result to repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs/production-smoke
+          cp smoke-output/result.json docs/production-smoke/latest-ezcopyrights-promo.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/production-smoke/latest-ezcopyrights-promo.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Record EZ Copyrights production promo smoke result"
+          git push origin HEAD:main
+
+      - name: Upload rendered promo
+        uses: actions/upload-artifact@v4
+        with:
+          name: ezcopyrights-production-promo
+          path: |
+            smoke-output/ezcopyrights-production-smoke.mp4
+            smoke-output/result.json
+          retention-days: 14
