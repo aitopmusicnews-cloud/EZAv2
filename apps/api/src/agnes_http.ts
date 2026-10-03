@@ -88,7 +88,7 @@ async function fetchAgnesWithRetry(
     }
     const retryAfter = Number(response.headers.get("retry-after"));
     const delayMs = Number.isFinite(retryAfter) && retryAfter >= 0
-      ? Math.min(5000, retryAfter * 1000)
+      ? Math.min(65_000, retryAfter * 1000)
       : RETRY_DELAYS_MS[attempt]!;
     await sleepImpl(delayMs);
   }
