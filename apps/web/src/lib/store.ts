@@ -180,6 +180,7 @@ type State = {
   approveSongUnderstanding: () => void;
 
   setDirectorVision: (vision: string) => void;
+  applyProfessionalDirectorPlan: (plan: DirectorPlan, bible: ProductionBible) => void;
   buildDirectorPlan: () => DirectorPlan | null;
   updateDirectorBible: (patch: Partial<ProductionBible>) => void;
   updateDirectorShot: (id: string, patch: Partial<Pick<DirectorShot, "idea" | "camera" | "framing" | "mood" | "location" | "hero">>) => void;
@@ -479,6 +480,15 @@ export const useStore = create<State>()(
         } : state),
 
       setDirectorVision: (directorVision) => set({ directorVision }),
+      applyProfessionalDirectorPlan: (directorPlan, productionBible) =>
+        set({
+          productionBible,
+          directorPlan,
+          clips: directorClips(directorPlan, productionBible),
+          selectedClipId: directorPlan.shots[0]?.clipId ?? null,
+          directorStage: "plan",
+          directorFinalUrl: null,
+        }),
       buildDirectorPlan: () => {
         const { analysis, directorVision, productionBible } = get();
         if (!analysis) return null;
