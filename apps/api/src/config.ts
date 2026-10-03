@@ -14,6 +14,13 @@ const Env = z.object({
   AGNES_API_KEY: optionalNonEmpty.optional(),
   SYNC_API_KEY: optionalNonEmpty.optional(),
   OPENAI_API_KEY: optionalNonEmpty.optional(),
+  AZURE_OPENAI_MAIN_ENDPOINT: optionalUrl.optional(),
+  AZURE_OPENAI_MAIN_API_KEY: optionalNonEmpty.optional(),
+  AZURE_OPENAI_MAIN_DEPLOYMENT: z.string().min(1).default("gpt-4.1-mini"),
+  AZURE_OPENAI_TTS_ENDPOINT: optionalUrl.optional(),
+  AZURE_OPENAI_TTS_API_KEY: optionalNonEmpty.optional(),
+  AZURE_OPENAI_TTS_DEPLOYMENT: z.string().min(1).default("gpt-4o-mini-tts"),
+  AZURE_OPENAI_TTS_VOICE: z.string().min(1).default("alloy"),
   TRANSCRIPTION_TEXT_MODEL: z.string().min(1).default("gpt-transcribe"),
   TRANSCRIPTION_TIMING_MODEL: z.string().min(1).default("whisper-1"),
   SONG_UNDERSTANDING_MODEL: z.string().min(1).default("gpt-5.6"),
@@ -68,8 +75,14 @@ if (!config.SYNC_API_KEY) {
 }
 if (!config.OPENAI_API_KEY) {
   console.warn(
-    "WARN: OPENAI_API_KEY is not set. Automatic lyric transcription and Song Understanding are offline; manual/official lyric entry remains available."
+    "WARN: OPENAI_API_KEY is not set. Automatic lyric transcription is offline; manual/official lyric entry remains available."
   );
+}
+if (!config.AZURE_OPENAI_MAIN_API_KEY || !config.AZURE_OPENAI_MAIN_ENDPOINT) {
+  console.warn("WARN: Azure OpenAI main model is not configured. Song Understanding will fall back to OPENAI_API_KEY when available.");
+}
+if (!config.AZURE_OPENAI_TTS_API_KEY || !config.AZURE_OPENAI_TTS_ENDPOINT) {
+  console.warn("WARN: Azure OpenAI TTS is not configured. Promo voiceover generation is offline.");
 }
 if (config.STORAGE_BACKEND === "s3") {
   if (!config.S3_BUCKET || !config.S3_REGION) {
