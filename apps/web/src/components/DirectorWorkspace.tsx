@@ -259,6 +259,10 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
 
   const approvePlanAndContinue = () => {
     clearMessages();
+    if (!lockedCharacterUrl) {
+      setError("Select a Character Lock reference before generating storyboard images. Add the character in Advanced Editor if needed.");
+      return;
+    }
     approveDirectorPlan();
     const approved = useStore.getState().directorPlan?.approvedAt;
     if (!approved) {
@@ -855,7 +859,7 @@ function PlanStep({
         <label className="director-field">
           <span>Character Lock Reference</span>
           <select value={lockedCharacterUrl} onChange={(event) => onLockedCharacter(event.target.value)}>
-            <option value="">No locked character</option>
+            <option value="">Select Character Lock…</option>
             {characterLockOptions.map((url, index) => (
               <option value={url} key={url}>Character reference {index + 1}</option>
             ))}
@@ -889,7 +893,7 @@ function PlanStep({
       </div>
       <div className="director-approval-bar">
         <button type="button" className="btn ghost" onClick={onBack}>Back to Treatment</button>
-        <button type="button" className="director-primary" onClick={onApprove}>{plan.approvedAt ? "Plan Approved" : "Approve Plan & Generate Images"}</button>
+        <button type="button" className="director-primary" disabled={!lockedCharacterUrl} onClick={onApprove}>{plan.approvedAt ? "Plan Approved" : lockedCharacterUrl ? "Approve Plan & Generate Images" : "Select Character Lock to Continue"}</button>
       </div>
     </section>
   );
