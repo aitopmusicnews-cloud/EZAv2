@@ -12,6 +12,7 @@ import { generateSongUnderstanding } from "./songUnderstanding.js";
 
 export type DirectorPhaseADeps = {
   openAIConfigured: () => boolean;
+  understandingConfigured?: () => boolean;
   prepareAudio: typeof prepareTranscriptionAudio;
   transcriptionProvider: Pick<TranscriptionProvider, "transcribe">;
   alignOfficialLyrics: typeof alignOfficialLyrics;
@@ -23,6 +24,9 @@ export type DirectorPhaseARouteOptions = { deps?: DirectorPhaseADeps };
 export function createDefaultDirectorPhaseADeps(): DirectorPhaseADeps {
   return {
     openAIConfigured: () => Boolean(config.OPENAI_API_KEY),
+    understandingConfigured: () => Boolean(
+      (config.AZURE_OPENAI_MAIN_ENDPOINT && config.AZURE_OPENAI_MAIN_API_KEY) || config.OPENAI_API_KEY
+    ),
     prepareAudio: prepareTranscriptionAudio,
     transcriptionProvider: new OpenAITranscriptionProvider(),
     alignOfficialLyrics,
@@ -62,8 +66,9 @@ export async function directorPhaseARoutes(app: FastifyInstance, options: Direct
   });
 
   app.post("/api/director/understand", { config: { rateLimit: { max: 6, timeWindow: "1 minute" } } }, async (req, reply) => {
-    if (!deps.openAIConfigured()) {
-      return reply.code(503).send({ error: "Song Understanding is not configured. Configure OPENAI_API_KEY." });
+    const understandingConfigured = deps.understandingConfigured ?? deps.openAIConfigured;
+    if (!understandingConfigured()) {
+      return reply.code(503).send({ error: "Song Understanding is not configured. Configure the Azure OpenAI main deployment or OPENAI_API_KEY." });
     }
     const parsed = SongUnderstandingRequest.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues.map((issue) => issue.message).join("; ") });
