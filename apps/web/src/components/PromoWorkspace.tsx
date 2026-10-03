@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getErrorMessage } from "@mvs/shared";
 import {
   uploadAudioAsset,
+  generatePromoVoiceover,
   uploadImage,
   uploadVideo,
   getPromoRenderJob,
@@ -133,6 +134,20 @@ export function PromoWorkspace() {
     } catch (e) { setError(getErrorMessage(e)); } finally { setBusy(null); }
   }
 
+  async function createAlloyVoiceover() {
+    const script = voiceScript.trim();
+    if (!script) return setError("Enter a voiceover script first.");
+    setBusy("Generating Alloy voiceover…"); setError(null);
+    try {
+      const generated = await generatePromoVoiceover(script, 1);
+      setVoice({ name: generated.filename, url: generated.url });
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   function move(id: string, d: -1 | 1) {
     setScenes((xs) => { const i = xs.findIndex((s) => s.id === id), j = i + d; if (i < 0 || j < 0 || j >= xs.length) return xs; const n = [...xs]; [n[i], n[j]] = [n[j]!, n[i]!]; return n; });
   }
@@ -243,8 +258,9 @@ export function PromoWorkspace() {
           <label className="promo-field"><span>Production notes · NEVER SPOKEN</span><textarea value={selected.productionNotes} placeholder="Camera movement, edit note, visual direction…" onChange={(e) => patch(selected.id, { productionNotes: e.target.value })} /></label>
         </> : <p className="promo-muted">Add a scene to unlock shot controls.</p>}
         <div className="promo-divider" />
-        <label className="promo-field"><span>Voiceover script · reference only</span><textarea value={voiceScript} placeholder="Paste narration here. Production notes stay separate." onChange={(e) => setVoiceScript(e.target.value)} /></label>
-        <p className="promo-muted">Only uploaded voiceover audio is mixed into the export. Production notes are never sent to speech.</p>
+        <label className="promo-field"><span>Voiceover script · Alloy</span><textarea maxLength={4096} value={voiceScript} placeholder="Paste narration here. Production notes stay separate." onChange={(e) => setVoiceScript(e.target.value)} /></label>
+        <button className="btn primary" disabled={!voiceScript.trim() || !!busy} onClick={() => void createAlloyVoiceover()}>Generate Alloy voiceover</button>
+        <p className="promo-muted">Uses Azure gpt-4o-mini-tts with Alloy. Production notes are never sent to speech. You can still upload or replace voiceover audio manually.</p>
         {error && <div className="promo-error">{error}</div>}{renderStatus && !renderUrl && <div className="promo-status">{renderStatus}</div>}
       </aside>
     </div>

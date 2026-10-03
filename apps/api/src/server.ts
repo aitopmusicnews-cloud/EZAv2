@@ -30,6 +30,7 @@ import { saveClip, listClips, deleteClip } from "./clips.js";
 import { saveImage, listImages, deleteImage } from "./images.js";
 import { saveFolder, listFolders, deleteFolder } from "./folders.js";
 import { directorPhaseARoutes } from "./directorPhaseARoutes.js";
+import { synthesizePromoVoiceover } from "./azureTts.js";
 import {
   ImageToVideoRequest,
   KeyframeToVideoRequest,
@@ -469,6 +470,25 @@ const PromoRenderBody = z.object({
       break;
     }
   }
+});
+
+const PromoVoiceoverBody = z.object({
+  text: z.string().trim().min(1).max(4096),
+  speed: z.number().finite().min(0.25).max(4).default(1),
+});
+
+app.post("/api/promo/voiceover", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+  if (!config.AZURE_OPENAI_TTS_ENDPOINT || !config.AZURE_OPENAI_TTS_API_KEY) {
+    return reply.code(503).send({ error: "Azure promo voiceover is not configured." });
+  }
+  const body = PromoVoiceoverBody.parse(req.body);
+  const generated = await synthesizePromoVoiceover(body.text, { speed: body.speed });
+  return reply.send({
+    id: generated.id,
+    url: resolvePublicUrl(req, generated.publicUrl),
+    filename: generated.filename,
+    voice: generated.voice,
+  });
 });
 
 app.post("/api/promo/render", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (req, reply) => {
