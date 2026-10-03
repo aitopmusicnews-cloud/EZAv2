@@ -11,13 +11,13 @@ import { agnesClientPollTimeoutMs } from "./agnes-polling.js";
 import { toast } from "./toast.js";
 import type { Clip, GenerationModel, Task } from "@mvs/shared";
 
-/** Agnes free/default video access executes about one create request per minute.
+/** Agnes video access is limited to two create requests per minute.
  * Keep submissions serialized so a multi-shot Director plan does not immediately
  * trip provider 429s. Paid plans still benefit because generation/polling is
  * asynchronous and the next create is released as soon as the safe interval passes.
  */
 export const MAX_CONCURRENT = 1;
-export const AGNES_MIN_CREATE_INTERVAL_MS = 65_000;
+export const AGNES_MIN_CREATE_INTERVAL_MS = 31_000;
 const AGNES_MODEL = "agnes-video-v2.0";
 let lastAgnesCreateStartedAt = 0;
 
