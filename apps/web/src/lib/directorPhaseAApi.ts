@@ -61,6 +61,7 @@ export async function requestProfessionalTreatment(req: {
   analysis: AudioAnalysis;
   understanding: SongUnderstanding;
   vision: string;
+  promo?: import("@mvs/shared").DirectorPromoBrief;
 }): Promise<{ plan: DirectorPlan; productionBible: ProductionBible }> {
   return jsonOrThrow(await fetch("/api/director/treatment", {
     method: "POST",

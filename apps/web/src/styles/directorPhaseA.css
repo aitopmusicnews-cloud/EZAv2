@@ -169,3 +169,11 @@
     grid-template-columns: 1fr;
   }
 }
+
+.director-product-promo summary { cursor: pointer; font-size: 18px; }
+.director-product-promo fieldset { border: 0; padding: 0; display: grid; gap: 12px; min-width: 0; }
+.director-product-promo label { display: grid; gap: 6px; }
+.director-product-promo input, .director-product-promo textarea { box-sizing: border-box; width: 100%; padding: 10px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+.director-product-promo .director-product-review { display: flex; align-items: center; }
+.director-product-review input { width: auto; }
+.director-product-promo a { overflow-wrap: anywhere; }
