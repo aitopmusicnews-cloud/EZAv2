@@ -21,8 +21,8 @@ const Env = z.object({
   AZURE_OPENAI_TTS_API_KEY: optionalNonEmpty.optional(),
   AZURE_OPENAI_TTS_DEPLOYMENT: z.string().min(1).default("gpt-4o-mini-tts"),
   AZURE_OPENAI_TTS_VOICE: z.string().min(1).default("alloy"),
-  TRANSCRIPTION_TEXT_MODEL: z.string().min(1).default("gpt-transcribe"),
-  TRANSCRIPTION_TIMING_MODEL: z.string().min(1).default("whisper-1"),
+  AZURE_OPENAI_TRANSCRIPTION_ENDPOINT: z.string().url().default("https://ezvids-resource.openai.azure.com/openai/deployments/whisper/audio/transcriptions?api-version=2025-04-01-preview"),
+  AZURE_OPENAI_TRANSCRIPTION_API_KEY: optionalNonEmpty.optional(),
   SONG_UNDERSTANDING_MODEL: z.string().min(1).default("gpt-5.6"),
   PORT: z.coerce.number().default(3001),
   PUBLIC_BASE_URL: z.string().url().default("http://localhost:3001"),
@@ -74,9 +74,10 @@ if (!config.SYNC_API_KEY) {
   console.warn("WARN: SYNC_API_KEY is not set. Manual lip-sync is offline.");
 }
 if (!config.OPENAI_API_KEY) {
-  console.warn(
-    "WARN: OPENAI_API_KEY is not set. Automatic lyric transcription is offline; manual/official lyric entry remains available."
-  );
+  console.warn("WARN: OPENAI_API_KEY is not set. The legacy direct-OpenAI fallback is disabled; Azure remains the primary AI provider.");
+}
+if (!(config.AZURE_OPENAI_TRANSCRIPTION_API_KEY || config.AZURE_OPENAI_MAIN_API_KEY)) {
+  console.warn("WARN: Azure OpenAI transcription has no resource key. Automatic lyric transcription is offline.");
 }
 if (!config.AZURE_OPENAI_MAIN_API_KEY || !config.AZURE_OPENAI_MAIN_ENDPOINT) {
   console.warn("WARN: Azure OpenAI main model is not configured. Song Understanding will fall back to OPENAI_API_KEY when available.");

@@ -19,9 +19,10 @@ const understanding = {
   tensionRelease: [], performanceOpportunities: [], visualMotifs: [], uncertaintyNotes: [],
 };
 
-function deps(configured = true) {
+function deps(configured = true, transcriptionConfigured = configured) {
   return {
     openAIConfigured: () => configured,
+    transcriptionConfigured: () => transcriptionConfigured,
     prepareAudio: vi.fn(async () => ({ buffer: Buffer.from("audio"), filename: "song.mp3", mimeType: "audio/mpeg" as const })),
     transcriptionProvider: { transcribe: vi.fn(async () => lyrics) },
     alignOfficialLyrics: vi.fn(() => ({ ...lyrics, source: "hybrid" as const })),
@@ -30,11 +31,24 @@ function deps(configured = true) {
 }
 
 describe("directorPhaseARoutes", () => {
-  it("returns 503 for automatic transcription when OpenAI is not configured", async () => {
+  it("returns 503 for automatic transcription when Azure transcription is not configured", async () => {
     const app = Fastify();
-    await app.register(directorPhaseARoutes, { deps: deps(false) });
+    await app.register(directorPhaseARoutes, { deps: deps(false, false) });
     const res = await app.inject({ method: "POST", url: "/api/director/transcribe", payload: { songId: "abc", audioUrl: "https://ezav2.onrender.com/storage/uploads/abc.mp3", duration: 10 } });
     expect(res.statusCode).toBe(503);
+  });
+
+  it("allows Azure transcription with no direct OpenAI key configured", async () => {
+    const app = Fastify();
+    const d = deps(false, true);
+    await app.register(directorPhaseARoutes, { deps: d });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/director/transcribe",
+      payload: { songId: "abc", audioUrl: "https://ezav2.onrender.com/storage/uploads/abc.mp3", duration: 10 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(d.transcriptionProvider.transcribe).toHaveBeenCalledOnce();
   });
 
   it("aligns valid official lyrics", async () => {

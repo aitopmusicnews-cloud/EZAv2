@@ -34,6 +34,10 @@ AZURE_OPENAI_TTS_ENDPOINT=https://ezvids-resource.openai.azure.com/openai/deploy
 AZURE_OPENAI_TTS_API_KEY=<secret>
 AZURE_OPENAI_TTS_DEPLOYMENT=gpt-4o-mini-tts
 AZURE_OPENAI_TTS_VOICE=alloy
+AZURE_OPENAI_TRANSCRIPTION_ENDPOINT=https://ezvids-resource.openai.azure.com/openai/deployments/whisper/audio/transcriptions?api-version=2025-04-01-preview
+# Optional: only set this if transcription uses a different Azure resource key.
+# Otherwise it automatically reuses AZURE_OPENAI_MAIN_API_KEY.
+AZURE_OPENAI_TRANSCRIPTION_API_KEY=<optional-secret>
 PUBLIC_BASE_URL=https://ezav2.onrender.com
 WEB_ORIGIN=https://ezav2.onrender.com
 WEB_DIST_DIR=apps/web/dist
@@ -50,6 +54,6 @@ AWS_SECRET_ACCESS_KEY=<secret>
 
 `STORAGE_DIR` must remain a local filesystem path even when S3 is enabled; do not put an `s3://...` URI there. S3 addressing belongs in `S3_BUCKET`, `S3_REGION`, and `S3_PUBLIC_URL_BASE`.
 
-The Azure OpenAI main deployment powers Song Understanding. The Azure TTS deployment generates promo narration from the Voiceover script box using Alloy. Keep both Azure API keys server-side. `OPENAI_API_KEY` remains optional and is only needed for the existing automatic lyric transcription path.
+The Azure OpenAI main deployment powers Song Understanding. The Azure TTS deployment generates promo narration from the Voiceover script box using Alloy. Automatic lyric transcription uses an Azure OpenAI Whisper deployment named `whisper` and requests word/segment timestamps for alignment. TTS and transcription reuse `AZURE_OPENAI_MAIN_API_KEY` unless a dedicated Azure key is explicitly configured. Direct `OPENAI_API_KEY` access is not required for transcription.
 
 Audio analysis is performed by the local `audio_analysis/` Python process during the upload request. The analyzer is downsampled/resource-bounded for the Render service and the browser receives the completed analysis in the successful upload response.
