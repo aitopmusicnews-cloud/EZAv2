@@ -20,6 +20,7 @@ import {
   transcribeSong,
 } from "../lib/directorPhaseAApi.js";
 import { useStore } from "../lib/store.js";
+import { downloadFromUrl } from "../lib/download.js";
 import {
   approveAllReadyDirectorClips,
   approveAllStoryboardImages,
@@ -1140,16 +1141,35 @@ function EditStep({
 }
 
 function FinalStep({ url, onBack }: { url: string; onBack: () => void }) {
+  const [downloading, setDownloading] = useState(false);
+
+  const onDownload = async () => {
+    setDownloading(true);
+    try {
+      await downloadFromUrl(url, "final-music-video.mp4");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <section className="director-panel">
       <div className="director-section-heading">
         <span className="director-step-number">9</span>
-        <div><h2>Final Video</h2><p>Your rendered music video is ready.</p></div>
+        <div><h2>Final Video</h2><p>Your rendered music video is ready to preview or download.</p></div>
       </div>
-      <video src={url} controls playsInline style={{ width: "100%", maxWidth: 960 }} />
+      <video src={url} controls playsInline preload="metadata" style={{ width: "100%", maxWidth: 960 }} />
       <div className="director-action-row">
         <button type="button" className="btn ghost" onClick={onBack}>Back to Edit</button>
-        <a className="director-primary" href={url} target="_blank" rel="noreferrer">Open Final Video</a>
+        <a className="btn" href={url} target="_blank" rel="noreferrer">Preview MP4</a>
+        <button
+          type="button"
+          className="director-primary"
+          onClick={() => void onDownload()}
+          disabled={downloading}
+        >
+          {downloading ? "Downloading…" : "Download MP4"}
+        </button>
       </div>
     </section>
   );
