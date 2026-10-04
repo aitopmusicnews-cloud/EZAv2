@@ -1,4 +1,4 @@
-import { AGNES_VIDEO_MODEL, getErrorMessage } from "@mvs/shared";
+import { AGNES_VIDEO_MODEL, getErrorMessage, normalizeProductionLocks } from "@mvs/shared";
 import { generateTextToImage, renderTimeline } from "./api.js";
 import { compileDirectorImageRequest, compileDirectorVideoRequest } from "./directorPrompts.js";
 import { enqueueGeneration } from "./scheduler.js";
@@ -11,6 +11,11 @@ function approvedPlan() {
     throw new Error("This is a Legacy Director plan. Upgrade through Lyrics → Song Understanding → Treatment before Professional Director generation.");
   }
   if (!plan.approvedAt) throw new Error("Approve the BeatSync video plan before generating storyboard images.");
+  const state = useStore.getState();
+  const bible = normalizeProductionLocks(state.productionBible ?? {}, state.referenceAssets);
+  if (!bible.characterLocks!.some((lock) => lock.locked && state.referenceAssets.some((ref) => ref.id === lock.referenceAssetId && ref.url))) {
+    throw new Error("Select at least one active Character Lock before generation.");
+  }
   return plan;
 }
 
@@ -20,6 +25,8 @@ export async function generateStoryboardImage(shotId: string): Promise<string> {
   const shot = plan.shots.find((item) => item.id === shotId);
   if (!shot) throw new Error("Director shot not found.");
   state.setDirectorShotImage(shotId, { status: "generating" });
+  const generationShot = useStore.getState().directorPlan?.shots.find((item) => item.id === shotId);
+  const isCurrent = () => useStore.getState().directorPlan?.shots.find((item) => item.id === shotId) === generationShot;
   try {
     const request = compileDirectorImageRequest(
       shot,
@@ -27,11 +34,12 @@ export async function generateStoryboardImage(shotId: string): Promise<string> {
       state.referenceAssets,
     );
     const image = await generateTextToImage(request);
+    if (!isCurrent()) throw new Error("The shot changed during generation. Generate its updated storyboard again.");
     useStore.getState().setDirectorShotImage(shotId, { status: "ready", url: image.url });
     return image.url;
   } catch (error) {
     const message = getErrorMessage(error);
-    useStore.getState().setDirectorShotImage(shotId, { status: "failed", error: message });
+    if (isCurrent()) useStore.getState().setDirectorShotImage(shotId, { status: "failed", error: message });
     throw new Error(`Storyboard image failed for ${shot.role}: ${message}`);
   }
 }

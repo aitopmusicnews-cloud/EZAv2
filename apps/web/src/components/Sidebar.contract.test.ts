@@ -40,8 +40,8 @@ describe("text-to-image and manual lip-sync contracts", () => {
   it("exposes structured Agnes production controls and compiles them before generation", async () => {
     const sidebar = await read("apps/web/src/components/Sidebar.tsx");
     expect(sidebar).toMatch(/Production Bible/);
-    expect(sidebar).toMatch(/Locked character reference/);
-    expect(sidebar).toMatch(/Locked vehicle reference/);
+    expect(sidebar).toMatch(/<ProductionLocks/);
+    expect(sidebar).toMatch(/<ShotLockAssignments/);
     expect(sidebar).toMatch(/Spatial lock/);
     expect(sidebar).toMatch(/Scene negative prompt/);
     expect(sidebar).toMatch(/What Agnes will receive/);

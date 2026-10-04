@@ -1,0 +1,11 @@
+.production-locks, .shot-locks { color: #e9eaf1; margin: 14px 0; }
+.production-locks p, .shot-locks small { color: #b9bece; display: block; }
+.lock-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px; }
+.lock-card { display: flex; flex-direction: column; gap: 9px; padding: 12px; border: 1px solid #42485e; border-radius: 10px; background: #1b2030; min-width: 0; }
+.lock-card img { width: 100%; height: 120px; object-fit: contain; border-radius: 6px; }
+.production-locks select, .production-locks input:not([type=checkbox]), .production-locks textarea, .shot-locks textarea { width: 100%; box-sizing: border-box; background: #111624; color: #f1f3fa; border: 1px solid #555e78; border-radius: 6px; padding: 8px; }
+.production-locks textarea::placeholder, .shot-locks textarea::placeholder { color: #aeb5cb; }
+.production-locks input[type=checkbox], .shot-locks input[type=checkbox] { width: auto; accent-color: #aa99ff; }
+.lock-upload { font-size: 12px; }
+.shot-locks fieldset { border: 1px solid #555e78; border-radius: 6px; margin-bottom: 10px; }
+.shot-locks label { display: block; margin: 7px 0; }

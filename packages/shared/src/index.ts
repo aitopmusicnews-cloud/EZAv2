@@ -137,6 +137,9 @@ export const DirectorShot = z.object({
   mood: z.string().min(1),
   location: z.string().min(1),
   energy: z.number().finite().min(0).max(1),
+  characterIds: z.array(z.string()).max(3).optional(),
+  assetIds: z.array(z.string()).optional(),
+  continuityNotes: z.string().optional(),
   hero: z.boolean().default(false),
   imageStatus: z.enum(["idle", "generating", "ready", "failed"]).default("idle"),
   imageUrl: z.string().optional(),
@@ -165,7 +168,7 @@ export const DirectorPlan = z.object({
 });
 export type DirectorPlan = z.infer<typeof DirectorPlan>;
 
-export const ReferenceRole = z.enum(["character", "vehicle", "wardrobe", "location", "style", "prop"]);
+export const ReferenceRole = z.enum(["character", "vehicle", "wardrobe", "location", "style", "prop", "product"]);
 export type ReferenceRole = z.infer<typeof ReferenceRole>;
 
 export const ReferenceAsset = z.object({
@@ -216,6 +219,25 @@ export const SpatialLock = z.object({
 });
 export type SpatialLock = z.infer<typeof SpatialLock>;
 
+export const CharacterLockSlot = z.object({
+  id: z.string().min(1),
+  slot: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  name: z.string(),
+  notes: z.string().optional(),
+  referenceAssetId: z.string().min(1),
+  locked: z.boolean(),
+});
+export type CharacterLockSlot = z.infer<typeof CharacterLockSlot>;
+export const AssetLock = z.object({
+  id: z.string().min(1),
+  type: z.enum(["vehicle", "wardrobe", "prop", "location", "product", "style"]),
+  name: z.string(),
+  notes: z.string().optional(),
+  referenceAssetId: z.string().min(1),
+  locked: z.boolean(),
+});
+export type AssetLock = z.infer<typeof AssetLock>;
+
 export const ProductionBible = z.object({
   id: z.string().optional(),
   characterProfile: z.string().optional(),
@@ -226,6 +248,8 @@ export const ProductionBible = z.object({
   colorPalette: z.string().optional(),
   continuityPrompt: z.string().optional(),
   negativePrompt: z.string().optional(),
+  characterLocks: z.array(CharacterLockSlot).max(3).refine((locks) => new Set(locks.map((lock) => lock.slot)).size === locks.length && new Set(locks.map((lock) => lock.id)).size === locks.length, "Character slots and IDs must be unique").optional(),
+  assetLocks: z.array(AssetLock).refine((locks) => new Set(locks.map((lock) => lock.id)).size === locks.length, "Asset IDs must be unique").optional(),
   characterReferenceAssetIds: z.array(z.string()).optional(),
   vehicleReferenceAssetIds: z.array(z.string()).optional(),
   defaultSpatialLock: SpatialLock.optional(),
@@ -481,3 +505,5 @@ export const PromoAdDraft = z.object({
   reviewNotes: z.array(z.string().max(500)).max(10),
 });
 export type PromoAdDraft = z.infer<typeof PromoAdDraft>;
+
+export * from "./productionLocks.js";

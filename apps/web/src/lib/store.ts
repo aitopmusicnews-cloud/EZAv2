@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { AudioAnalysis, AudioSection, Clip, DirectorPlan, DirectorShot, DirectorStage, LyricDocument, ProductionBible, ReferenceAsset, SongUnderstanding } from "@mvs/shared";
-import { AGNES_VIDEO_MODEL, ProjectSnapshot } from "@mvs/shared";
+import { AGNES_VIDEO_MODEL, ProjectSnapshot, normalizeProductionLocks, normalizeShotLocks, shotLockReferenceIds } from "@mvs/shared";
 import type { Job } from "./scheduler.js";
 import { getWs } from "./wavesurfer-ref.js";
 import { createDirectorPlan, directorScenePrompt, suggestProductionBible } from "./director.js";
@@ -105,10 +105,6 @@ function invalidateDirectorPlan(plan: DirectorPlan | null): DirectorPlan | null 
 }
 
 function directorClips(plan: DirectorPlan, bible: ProductionBible | null): Clip[] {
-  const referenceAssetIds = Array.from(new Set([
-    ...(bible?.characterReferenceAssetIds ?? []),
-    ...(bible?.vehicleReferenceAssetIds ?? []),
-  ]));
   return plan.shots.map((shot) => ({
     id: shot.clipId,
     start: shot.start,
@@ -119,7 +115,7 @@ function directorClips(plan: DirectorPlan, bible: ProductionBible | null): Clip[
     imagePrompt: directorScenePrompt(shot),
     model: AGNES_VIDEO_MODEL,
     sectionLabel: shot.sectionLabel,
-    referenceAssetIds,
+    referenceAssetIds: shotLockReferenceIds(shot, bible ?? {}),
     archetypeUrl: shot.imageUrl,
   }));
 }
@@ -183,7 +179,7 @@ type State = {
   applyProfessionalDirectorPlan: (plan: DirectorPlan, bible: ProductionBible) => void;
   buildDirectorPlan: () => DirectorPlan | null;
   updateDirectorBible: (patch: Partial<ProductionBible>) => void;
-  updateDirectorShot: (id: string, patch: Partial<Pick<DirectorShot, "idea" | "camera" | "framing" | "mood" | "location" | "hero">>) => void;
+  updateDirectorShot: (id: string, patch: Partial<Pick<DirectorShot, "idea" | "camera" | "framing" | "mood" | "location" | "hero" | "characterIds" | "assetIds" | "continuityNotes">>) => void;
   approveDirectorPlan: () => void;
   setDirectorShotImage: (id: string, patch: { status: DirectorShot["imageStatus"]; url?: string; error?: string }) => void;
   approveDirectorImage: (id: string, approved?: boolean) => void;
@@ -299,7 +295,7 @@ export const useStore = create<State>()(
           clips,
           characterImageUrl: s.characterImageUrl ?? null,
           lookbook: s.lookbook ?? [],
-          productionBible: s.productionBible ?? null,
+          productionBible: s.productionBible ? normalizeProductionLocks(s.productionBible, s.referenceAssets ?? []) : null,
           referenceAssets: s.referenceAssets ?? [],
           lyricDocument: s.lyricDocument ?? null,
           songUnderstanding: s.songUnderstanding ?? null,
@@ -381,7 +377,7 @@ export const useStore = create<State>()(
           next[idx] = newUrl;
           return { lookbook: next };
         }),
-      setProductionBible: (productionBible) => set({ productionBible }),
+      setProductionBible: (productionBible) => get().updateDirectorBible(productionBible ?? { characterLocks: [], assetLocks: [] }),
       upsertReferenceAsset: (asset) =>
         set((s) => {
           const exists = s.referenceAssets.some((item) => item.id === asset.id);
@@ -391,21 +387,17 @@ export const useStore = create<State>()(
               : [...s.referenceAssets, asset],
           };
         }),
-      removeReferenceAsset: (id) =>
-        set((s) => ({
-          referenceAssets: s.referenceAssets.filter((asset) => asset.id !== id),
-          productionBible: s.productionBible
-            ? {
-                ...s.productionBible,
-                characterReferenceAssetIds: s.productionBible.characterReferenceAssetIds?.filter((assetId) => assetId !== id),
-                vehicleReferenceAssetIds: s.productionBible.vehicleReferenceAssetIds?.filter((assetId) => assetId !== id),
-              }
-            : null,
-          clips: s.clips.map((clip) => ({
-            ...clip,
-            referenceAssetIds: clip.referenceAssetIds?.filter((assetId) => assetId !== id),
-          })),
-        })),
+      removeReferenceAsset: (id) => {
+        const state = get();
+        const bible = normalizeProductionLocks(state.productionBible ?? {}, state.referenceAssets);
+        set({ referenceAssets: state.referenceAssets.filter((asset) => asset.id !== id) });
+        get().updateDirectorBible({
+          ...bible,
+          characterLocks: bible.characterLocks!.filter((lock) => lock.referenceAssetId !== id),
+          assetLocks: bible.assetLocks!.filter((lock) => lock.referenceAssetId !== id),
+        });
+        set((s) => ({ clips: s.clips.map((clip) => ({ ...clip, referenceAssetIds: clip.referenceAssetIds?.filter((assetId) => assetId !== id) })) }));
+      },
 
       setLyricDocument: (lyricDocument) =>
         set((state) => ({
@@ -484,16 +476,17 @@ export const useStore = create<State>()(
         set((state) => {
           // Professional treatment can refresh creative direction, but it must never
           // discard explicit Character/Vehicle Locks already chosen by the director.
-          const lockedBible: ProductionBible = {
-            ...productionBible,
-            characterReferenceAssetIds: state.productionBible?.characterReferenceAssetIds ?? productionBible.characterReferenceAssetIds,
-            vehicleReferenceAssetIds: state.productionBible?.vehicleReferenceAssetIds ?? productionBible.vehicleReferenceAssetIds,
-          };
+          const existing = normalizeProductionLocks(state.productionBible ?? productionBible, state.referenceAssets);
+          const lockedBible = normalizeProductionLocks({ ...productionBible,
+            characterLocks: existing.characterLocks, assetLocks: existing.assetLocks,
+          }, state.referenceAssets);
+          directorPlan = { ...directorPlan, shots: directorPlan.shots.map((shot) => normalizeShotLocks(shot, lockedBible)) };
           return {
             productionBible: lockedBible,
             directorPlan,
             clips: directorClips(directorPlan, lockedBible),
             selectedClipId: directorPlan.shots[0]?.clipId ?? null,
+            jobs: state.jobs.map((job) => job.state === "queued" || job.state === "running" ? { ...job, state: "cancelled" as const } : job),
             directorStage: "plan",
             directorFinalUrl: null,
           };
@@ -513,10 +506,13 @@ export const useStore = create<State>()(
       },
       updateDirectorBible: (patch) =>
         set((state) => {
-          const productionBible = { ...(state.productionBible ?? {}), ...patch };
+          const current = normalizeProductionLocks(state.productionBible ?? {}, state.referenceAssets);
+          if (patch.characterReferenceAssetIds !== undefined && patch.characterLocks === undefined) current.characterLocks = undefined;
+          if (patch.vehicleReferenceAssetIds !== undefined && patch.assetLocks === undefined) current.assetLocks = undefined;
+          const productionBible = normalizeProductionLocks({ ...current, ...patch }, state.referenceAssets);
           if (!state.directorPlan) return { productionBible };
           const shots = state.directorPlan.shots.map((shot) => ({
-            ...shot,
+            ...normalizeShotLocks(shot, productionBible),
             imageStatus: "idle" as const,
             imageUrl: undefined,
             imageApproved: false,
@@ -530,6 +526,7 @@ export const useStore = create<State>()(
             directorStage: "plan" as const,
             directorFinalUrl: null,
             clips: directorClips(directorPlan, productionBible),
+            jobs: state.jobs.map((job) => job.state === "queued" || job.state === "running" ? { ...job, state: "cancelled" as const } : job),
           };
         }),
       updateDirectorShot: (id, patch) =>
@@ -537,8 +534,7 @@ export const useStore = create<State>()(
           if (!state.directorPlan) return state;
           const shots = state.directorPlan.shots.map((shot) => shot.id === id
             ? {
-                ...shot,
-                ...patch,
+                ...normalizeShotLocks({ ...shot, ...patch }, state.productionBible ?? {}),
                 imageStatus: "idle" as const,
                 imageUrl: undefined,
                 imageApproved: false,
@@ -551,7 +547,11 @@ export const useStore = create<State>()(
             directorPlan,
             directorStage: "plan" as const,
             directorFinalUrl: null,
-            clips: directorClips(directorPlan, state.productionBible),
+            clips: directorClips(directorPlan, state.productionBible).map((clip) => {
+              const target = shots.find((shot) => shot.id === id);
+              return clip.id === target?.clipId ? clip : state.clips.find((old) => old.id === clip.id) ?? clip;
+            }),
+            jobs: state.jobs.map((job) => job.clipId === shots.find((shot) => shot.id === id)?.clipId && (job.state === "queued" || job.state === "running") ? { ...job, state: "cancelled" as const } : job),
           };
         }),
       approveDirectorPlan: () =>
@@ -562,7 +562,7 @@ export const useStore = create<State>()(
           return {
             directorPlan,
             directorStage: "images" as const,
-            clips: directorClips(directorPlan, state.productionBible),
+            clips: directorClips(directorPlan, state.productionBible).map((clip) => state.clips.find((existing) => existing.id === clip.id) ?? clip),
             directorFinalUrl: null,
           };
         }),
@@ -795,6 +795,7 @@ export const useStore = create<State>()(
         return {
           ...current,
           ...persistedProject,
+          productionBible: ps.productionBible ? normalizeProductionLocks(ps.productionBible, ps.referenceAssets ?? []) : null,
           directorStage: ps.directorStage === "clips" ? "takes" : (ps.directorStage ?? current.directorStage),
           clips,
         };

@@ -66,6 +66,8 @@ describe("generateProfessionalTreatment", () => {
         mood: "confident and cinematic",
         location: "night city performance world",
         hero: index === 3,
+        characterIds: index === 0 ? ["lead"] : [],
+        assetIds: index === 0 ? ["car"] : [],
       })),
     };
 
@@ -76,6 +78,7 @@ describe("generateProfessionalTreatment", () => {
       const directorPayload = JSON.parse(body.input[1]!.content[0]!.text);
       expect(directorPayload.selectedVisualStyle).toContain("neo-noir");
       expect(directorPayload.directorRequest).toContain("more performance");
+      expect(directorPayload.previousProductionBible.characterLocks[0].id).toBe("lead");
       return new Response(JSON.stringify({
         output: [{ content: [{ type: "output_text", text: JSON.stringify(generated) }] }],
       }), { status: 200 });
@@ -88,6 +91,10 @@ describe("generateProfessionalTreatment", () => {
         vision: "artist performance in a night city",
         stylePrompt: "premium neo-noir with deep blacks and sculpted practical lighting",
         directorRequest: "make the second half more performance-driven",
+        previousProductionBible: {
+          characterLocks: [{ id: "lead", slot: 1, name: "Artist", referenceAssetId: "lead-image", locked: true }],
+          assetLocks: [{ id: "car", type: "vehicle", name: "Red car", referenceAssetId: "car-image", locked: true }],
+        },
       },
       {
         endpoint: "https://example.services.ai.azure.com/openai/v1/responses",
@@ -99,6 +106,10 @@ describe("generateProfessionalTreatment", () => {
 
     expect(result.plan.planningBasis).toBe("professional-treatment");
     expect(result.plan.shots).toHaveLength(4);
+    expect(result.plan.shots[0]?.characterIds).toEqual(["lead"]);
+    expect(result.plan.shots[0]?.assetIds).toEqual(["car"]);
+    expect(result.plan.shots[1]?.characterIds).toEqual([]);
+    expect(result.productionBible.characterLocks?.[0]?.referenceAssetId).toBe("lead-image");
     expect(result.plan.shots[0]!.start).toBe(0);
     expect(result.plan.shots.at(-1)!.end).toBe(12);
     expect(result.productionBible.characterProfile).toContain("consistent lead performer");
