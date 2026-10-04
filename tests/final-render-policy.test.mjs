@@ -36,7 +36,7 @@ assert.match(render, /rm\(workDir, \{ recursive: true, force: true \}\)/);
 assert.doesNotMatch(render, /lipSyncTaskId|lipSyncModel/, 'renderer must not switch audio behavior based on lip-sync metadata');
 
 const header = await readFile('apps/web/src/components/Header.tsx', 'utf8');
-assert.match(header, />\\s*Preview MP4\\s*</);
+assert.match(header, />\s*Preview MP4\s*</);
 assert.match(header, /Download MP4/);
 assert.match(header, /downloadFromUrl\(renderUrl/);
 
