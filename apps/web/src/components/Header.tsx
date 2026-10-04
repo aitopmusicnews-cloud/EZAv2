@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { QueueStatus } from "./QueueStatus.js";
 import { Library } from "./Library.js";
 import { toast } from "../lib/toast.js";
+import { downloadFromUrl } from "../lib/download.js";
 
 export function Header() {
   const songId = useStore((s) => s.songId);
@@ -21,6 +22,7 @@ export function Header() {
   const [renderUrl, setRenderUrl] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
   const [renderLabel, setRenderLabel] = useState<string | null>(null);
+  const [downloadingRender, setDownloadingRender] = useState(false);
   const [fades, setFades] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
@@ -130,6 +132,21 @@ export function Header() {
     }
   };
 
+  const onDownloadRender = async () => {
+    if (!renderUrl) return;
+    const rawName = projectName || songFilename?.replace(/\.[^.]+$/, "") || "music-video";
+    const safeName = rawName
+      .slice(0, 80)
+      .replace(/[^a-zA-Z0-9._-]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "music-video";
+    setDownloadingRender(true);
+    try {
+      await downloadFromUrl(renderUrl, `${safeName}.mp4`);
+    } finally {
+      setDownloadingRender(false);
+    }
+  };
+
   return (
     <>
       <header className="header">
@@ -195,9 +212,19 @@ export function Header() {
             </div>
           )}
           {renderUrl && (
-            <a href={renderUrl} target="_blank" className="btn" rel="noreferrer">
-              View render
-            </a>
+            <div className="export-cluster">
+              <a href={renderUrl} target="_blank" className="btn" rel="noreferrer">
+                Preview MP4
+              </a>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => void onDownloadRender()}
+                disabled={downloadingRender}
+              >
+                {downloadingRender ? "Downloading…" : "Download MP4"}
+              </button>
+            </div>
           )}
           <div className="export-cluster">
             <button type="button" className="btn primary" onClick={onExport} disabled={!analysis || rendering}>
