@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
   DirectorPlan,
+  normalizeProductionLocks,
+  normalizeShotLocks,
   ProductionBible,
   type AudioAnalysis,
   type DirectorPlan as DirectorPlanType,
@@ -57,7 +59,7 @@ const TREATMENT_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["index", "role", "idea", "camera", "framing", "mood", "location", "hero"],
+        required: ["index", "role", "idea", "camera", "framing", "mood", "location", "hero", "characterIds", "assetIds"],
         properties: {
           index: { type: "integer" },
           role: { type: "string" },
@@ -67,6 +69,8 @@ const TREATMENT_SCHEMA = {
           mood: { type: "string" },
           location: { type: "string" },
           hero: { type: "boolean" },
+          characterIds: { type: "array", items: { type: "string" } },
+          assetIds: { type: "array", items: { type: "string" } },
         },
       },
     },
@@ -83,6 +87,8 @@ Rules:
 - If selectedVisualStyle is supplied, treat it as explicit production direction and carry it through the treatment, Production Bible, and shot choices.
 - directorRequest is a direct instruction from the human director. Follow it unless it conflicts with fixed timing or approved song facts.
 - When previousPlan is supplied, this is a revision. Preserve strong existing decisions that the director did not ask to change, while returning a complete revised treatment and full shot plan.
+- Assign characterIds (0–3) and assetIds for EVERY shot using ONLY active lock IDs from previousProductionBible. An empty characterIds means no people. Never put unassigned people or locked assets in the shot idea. Locked reference identities override generic character descriptions. Never blend different characters into one person.
+- Preserve previous per-shot assignments on revisions unless the director explicitly requests a cast or asset change.
 - Make each shot specific enough for image generation and image-to-video generation.
 - Casting is a Director decision: define a concrete character/cast profile before storyboard generation instead of relying on image-model defaults.
 - Follow any character identity, demographic traits, or appearance explicitly supplied by the Artist / Director Vision or reference images. Do not infer race or ethnicity from lyrics, genre, location, or music style.
@@ -194,6 +200,7 @@ export async function generateProfessionalTreatment(
   const model = options.model ?? config.AZURE_OPENAI_MAIN_DEPLOYMENT;
   if (!endpoint || !apiKey) throw new Error("Azure OpenAI main model is not configured.");
 
+  const locks = normalizeProductionLocks(input.previousProductionBible ?? {});
   const slots = slotsFor(input.analysis, input.understanding);
   if (!slots.length) throw new Error("Could not create treatment timing slots from this song.");
 
@@ -213,7 +220,7 @@ export async function generateProfessionalTreatment(
               selectedVisualStyle: input.stylePrompt?.trim() || undefined,
               directorRequest: input.directorRequest?.trim() || undefined,
               previousPlan: input.previousPlan,
-              previousProductionBible: input.previousProductionBible,
+              previousProductionBible: locks,
               song: { duration: input.analysis.duration, bpm: input.analysis.bpm, key: input.analysis.key },
               understanding: input.understanding,
               fixedTimingSlots: slots,
@@ -277,13 +284,14 @@ export async function generateProfessionalTreatment(
         location: creative.location,
         energy: slot.energy,
         hero: creative.hero,
+        ...normalizeShotLocks({ characterIds: creative.characterIds ?? [], assetIds: creative.assetIds ?? [] }, locks),
         imageStatus: "idle",
         imageApproved: false,
         videoApproved: false,
       };
     }),
   });
-  const productionBible = ProductionBible.parse(generated.productionBible);
+  const productionBible = ProductionBible.parse({ ...generated.productionBible, characterLocks: locks.characterLocks, assetLocks: locks.assetLocks });
   if (!productionBible.negativePrompt?.trim()) throw new Error("Professional Treatment must include a negative prompt.");
   return { plan, productionBible };
 }

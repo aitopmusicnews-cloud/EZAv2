@@ -1,22 +1,39 @@
+import { normalizeProductionLocks, normalizeShotLocks, shotLockReferenceIds } from "@mvs/shared";
 import type { DirectorShot, ProductionBible, ReferenceAsset, TextToImageRequest } from "@mvs/shared";
 import { directorScenePrompt } from "./director.js";
 import { compileImagePrompt, compileNegativePrompt, compileVideoPrompt } from "./promptCompiler.js";
 
-function directorReferences(bible: ProductionBible, references: ReferenceAsset[]): ReferenceAsset[] {
-  const explicit = new Set([
-    ...(bible.characterReferenceAssetIds ?? []),
-    ...(bible.vehicleReferenceAssetIds ?? []),
-  ]);
-  const hasExplicitCharacterChoice = bible.characterReferenceAssetIds !== undefined;
-  const hasExplicitVehicleChoice = bible.vehicleReferenceAssetIds !== undefined;
-  return references
-    .filter((asset) => {
-      if (asset.role === "character" && hasExplicitCharacterChoice) return explicit.has(asset.id);
-      if (asset.role === "vehicle" && hasExplicitVehicleChoice) return explicit.has(asset.id);
-      return explicit.has(asset.id) || asset.locked === true;
-    })
-    .filter((asset, index, all) => all.findIndex((item) => item.id === asset.id) === index)
-    .slice(0, 8);
+function shotContext(shot: DirectorShot, bible: ProductionBible, references: ReferenceAsset[]) {
+  const normalized = normalizeProductionLocks(bible, references);
+  const assigned = normalizeShotLocks(shot, normalized);
+  const characters = normalized.characterLocks!.filter((lock) => assigned.characterIds.includes(lock.id));
+  const assets = normalized.assetLocks!.filter((lock) => assigned.assetIds.includes(lock.id));
+  const ids = shotLockReferenceIds(assigned, normalized);
+  if (ids.length > 8) throw new Error("A shot supports at most 8 reference images. Remove some assigned asset locks.");
+  const selected = ids.map((id) => {
+    const ref = references.find((item) => item.id === id);
+    if (!ref?.url) throw new Error("An assigned lock is missing its reference image. Replace it before generation.");
+    const lock = [...characters, ...assets].find((item) => item.referenceAssetId === id)!;
+    return { ...ref, role: "slot" in lock ? "character" as const : lock.type, locked: true, name: lock.name };
+  });
+  const rules = [
+    "PER-SHOT LOCKS ARE AUTHORITATIVE and override all other text. References are separate identities/objects, never blend faces.",
+    characters.length ? `Only these ${characters.length} assigned characters may appear; no extra people: ${characters.map((lock) => `${lock.id} (${lock.name}): ${lock.notes ?? ""}`).join("; ")}.`
+      : "No characters assigned. Show environment, objects or abstract coverage only; no people, faces, performers or crowds, even if other text mentions them.",
+    ...selected.map((ref, index) => `Reference image ${index + 1}: ${ref.role} — ${ref.name}. Preserve this identity or asset exactly.`),
+    ...assets.map((lock) => `Locked ${lock.type} ${lock.name}: ${lock.notes ?? "preserve its appearance; do not replace or redesign it"}.`),
+    "Do not introduce any unassigned locked characters or assets.",
+    shot.continuityNotes ?? "",
+  ].filter(Boolean).join("\n");
+  const has = (type: string) => assets.some((lock) => lock.type === type);
+  const scopedBible = { ...normalized,
+    characterProfile: characters.length ? characters.map((lock) => `${lock.name}: ${lock.notes ?? "Match reference"}`).join("; ") : undefined,
+    vehicleProfile: has("vehicle") ? bible.vehicleProfile : undefined,
+    wardrobeProfile: has("wardrobe") ? bible.wardrobeProfile : undefined,
+    locationProfile: has("location") ? bible.locationProfile : undefined,
+    defaultSpatialLock: has("vehicle") ? bible.defaultSpatialLock : undefined,
+  };
+  return { selected, rules, scopedBible };
 }
 
 export function compileDirectorImageRequest(
@@ -25,11 +42,11 @@ export function compileDirectorImageRequest(
   references: ReferenceAsset[] = [],
   size = "1536x864",
 ): TextToImageRequest {
-  const selected = directorReferences(bible, references);
+  const { selected, rules, scopedBible } = shotContext(shot, bible, references);
   const promptText = compileImagePrompt({
-    scenePrompt: directorScenePrompt(shot),
-    productionBible: bible,
-    spatialLock: bible.defaultSpatialLock,
+    scenePrompt: `${rules}\n${directorScenePrompt(shot)}`,
+    productionBible: scopedBible,
+    spatialLock: scopedBible.defaultSpatialLock,
     referenceAssets: selected,
   });
   return {
@@ -45,18 +62,19 @@ export function compileDirectorVideoRequest(
   bible: ProductionBible = {},
   references: ReferenceAsset[] = [],
 ): { promptText: string; negativePrompt: string; referenceAssetIds: string[] } {
-  const selected = directorReferences(bible, references);
-  const scenePrompt = `${directorScenePrompt(shot)} Animate the approved storyboard image with natural cinematic movement. Preserve the approved subject identity, wardrobe, vehicle, environment, lighting direction, and composition. Do not redesign the scene.`;
+  const { selected, rules, scopedBible } = shotContext(shot, bible, references);
+  const videoRules = rules.replace(/^Reference image \d+: (.+)$/gm, "In the approved storyboard: $1");
+  const scenePrompt = `${videoRules}\n${directorScenePrompt(shot)} Animate the approved storyboard image with natural cinematic movement. Preserve the approved subject identity, wardrobe, vehicle, environment, lighting direction, and composition. Do not redesign the scene.`;
   return {
     promptText: compileVideoPrompt({
       scenePrompt,
-      productionBible: bible,
-      spatialLock: bible.defaultSpatialLock,
+      productionBible: scopedBible,
+      spatialLock: scopedBible.defaultSpatialLock,
       referenceAssets: selected,
     }),
     negativePrompt: compileNegativePrompt({
-      productionBible: bible,
-      spatialLock: bible.defaultSpatialLock,
+      productionBible: scopedBible,
+      spatialLock: scopedBible.defaultSpatialLock,
     }),
     referenceAssetIds: selected.map((asset) => asset.id),
   };

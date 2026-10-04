@@ -78,6 +78,9 @@ function compileCore(input: PromptCompileInput): string {
   ].filter(Boolean).join(" ");
   if (vehicleText) sections.push(`[VEHICLE LOCK]\n${vehicleText}`);
 
+  const otherRefs = (input.referenceAssets ?? []).filter((asset) => asset.locked !== false && asset.role !== "character" && asset.role !== "vehicle");
+  if (otherRefs.length) sections.push(`[ASSET LOCKS]\nAssigned references are authoritative. Preserve each asset exactly; do not swap or redesign it. ${otherRefs.map((asset) => `${asset.role}: ${asset.name ?? asset.id}`).join("; ")}`);
+
   const wardrobe = input.productionBible?.wardrobeProfile?.trim();
   if (wardrobe) sections.push(`[WARDROBE]\n${wardrobe}`);
 

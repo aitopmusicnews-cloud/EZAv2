@@ -98,7 +98,7 @@ async function resumeClipPoll(clipId: string, taskId: string): Promise<void> {
       : 900_000;
     const final = await pollTask(taskId, 5000, timeoutMs);
     const currentClip = useStore.getState().clips.find((item) => item.id === clipId);
-    if (currentClip?.generationTaskId && currentClip.generationTaskId !== taskId) {
+    if (currentClip?.generationTaskId !== taskId) {
       console.warn("Ignoring stale resumed generation completion because the clip has a newer task");
       return;
     }
@@ -120,7 +120,7 @@ async function resumeClipPoll(clipId: string, taskId: string): Promise<void> {
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     const currentClip = useStore.getState().clips.find((item) => item.id === clipId);
-    const ownsClip = !currentClip?.generationTaskId || currentClip.generationTaskId === taskId;
+    const ownsClip = currentClip?.generationTaskId === taskId;
     if (!ownsClip) return;
     if (currentClip?.status === "ready" && currentClip.videoUrl) return;
     useStore.getState().updateClip(clipId, { status: "failed", lastError: reason });
@@ -260,23 +260,15 @@ async function run(jobId: string): Promise<void> {
 
   try {
     await waitForAgnesCreateSlot();
-    if (isCancelled(jobId)) {
-      useStore.getState().updateClip(job.clipId, { status: "empty" });
-      return;
-    }
+    if (isCancelled(jobId)) return;
     const task = await startTask(job);
     setJobPatch(jobId, { taskId: task.id });
+    if (isCancelled(jobId)) return;
     useStore.getState().updateClip(job.clipId, { generationTaskId: task.id });
-    if (isCancelled(jobId)) {
-      useStore.getState().updateClip(job.clipId, { status: "empty" });
-      return;
-    }
+    if (isCancelled(jobId)) return;
 
     const final = await pollTask(task.id, 5000, agnesClientPollTimeoutMs(job.input.duration));
-    if (isCancelled(jobId)) {
-      useStore.getState().updateClip(job.clipId, { status: "empty" });
-      return;
-    }
+    if (isCancelled(jobId)) return;
     const videoUrl = taskOutputUrl(final);
     if (!taskSucceeded(final) || !videoUrl) {
       throw new Error(final.error ?? `task ended in ${final.status} with no video`);
@@ -293,6 +285,7 @@ async function run(jobId: string): Promise<void> {
     const clip = useStore.getState().clips.find((item) => item.id === job.clipId);
     if (clip) void persistGeneratedClip(clip, videoUrl, job.input.sectionLabel);
   } catch (error) {
+    if (isCancelled(jobId)) return;
     const rateLimited = error instanceof ApiError && error.rateLimited;
     const reason = rateLimited
       ? "The generation service rate limit was reached. Try again shortly."

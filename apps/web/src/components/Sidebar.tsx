@@ -1,3 +1,6 @@
+import { ProductionLocks, ShotLockAssignments } from "./ProductionLocks.js";
+import { normalizeProductionLocks, shotLockReferenceIds } from "@mvs/shared";
+import { compileDirectorImageRequest, compileDirectorVideoRequest } from "../lib/directorPrompts.js";
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../lib/store.js";
 import type { Clip, ProductionBible, ReferenceAsset, SpatialLock } from "@mvs/shared";
@@ -85,7 +88,7 @@ export function Sidebar() {
   const addLookbook = useStore((s) => s.addLookbook);
   const updateClip = useStore((s) => s.updateClip);
   const setProductionBible = useStore((s) => s.setProductionBible);
-  const upsertReferenceAsset = useStore((s) => s.upsertReferenceAsset);
+  const directorPlan = useStore((s) => s.directorPlan);
   const clip = useMemo(() => clips.find((c) => c.id === selectedId) ?? null, [clips, selectedId]);
   const [extracting, setExtracting] = useState(false);
   const [mode, setMode] = useState<SidebarMode>("textToVideo");
@@ -105,7 +108,8 @@ export function Sidebar() {
 
   if (!clip || !analysis) return null;
 
-  const bible: ProductionBible = productionBible ?? {};
+  const bible = normalizeProductionLocks(productionBible ?? {}, referenceAssets);
+  const directorShot = directorPlan?.shots.find((shot) => shot.clipId === clip.id);
   const source: GenerationSource | "library" =
     clip.source === "imageToVideo" || clip.source === "keyframeToVideo" || clip.source === "library"
       ? clip.source
@@ -122,26 +126,30 @@ export function Sidebar() {
     ...referenceAssets.map((asset) => asset.url),
   ].filter((v): v is string => Boolean(v))));
 
-  const characterReference = findBibleReference(referenceAssets, bible.characterReferenceAssetIds);
-  const vehicleReference = findBibleReference(referenceAssets, bible.vehicleReferenceAssetIds);
-  const globalReferenceIds = [
-    ...(bible.characterReferenceAssetIds ?? []),
-    ...(bible.vehicleReferenceAssetIds ?? []),
-  ];
-  const activeReferenceIds = Array.from(new Set([...globalReferenceIds, ...(clip.referenceAssetIds ?? [])]));
+  const activeReferenceIds = directorShot ? shotLockReferenceIds(directorShot, bible)
+    : clip.referenceAssetIds ?? shotLockReferenceIds({}, bible);
   const selectedReferenceAssets = activeReferenceIds
     .map((id) => referenceAssets.find((asset) => asset.id === id))
     .filter((asset): asset is ReferenceAsset => Boolean(asset));
 
+  let directorImage: ReturnType<typeof compileDirectorImageRequest> | undefined;
+  let directorVideo: ReturnType<typeof compileDirectorVideoRequest> | undefined;
+  let lockError = "";
+  if (directorShot) {
+    try {
+      directorImage = compileDirectorImageRequest(directorShot, bible, referenceAssets, imageSize);
+      directorVideo = compileDirectorVideoRequest(directorShot, bible, referenceAssets);
+    } catch (error) { lockError = getErrorMessage(error); }
+  }
   const effectiveSpatialLock = clip.spatialLock ?? bible.defaultSpatialLock;
   const spatialIssues = validateSpatialLock(effectiveSpatialLock);
-  const compiledVideoPrompt = compileVideoPrompt({
+  const compiledVideoPrompt = directorShot ? directorVideo?.promptText ?? "" : compileVideoPrompt({
     scenePrompt: prompt,
     productionBible: bible,
     spatialLock: effectiveSpatialLock,
     referenceAssets: selectedReferenceAssets,
   });
-  const compiledImagePrompt = compileImagePrompt({
+  const compiledImagePrompt = directorShot ? directorImage?.promptText ?? "" : compileImagePrompt({
     scenePrompt: imagePrompt,
     productionBible: bible,
     spatialLock: effectiveSpatialLock,
@@ -175,30 +183,6 @@ export function Sidebar() {
     setProductionBible({ ...bible, ...patch });
   };
 
-  const setLockedReference = (role: "character" | "vehicle", url: string) => {
-    if (!url) {
-      if (role === "character") updateBible({ characterReferenceAssetIds: [] });
-      else updateBible({ vehicleReferenceAssetIds: [] });
-      return;
-    }
-    let asset = referenceAssets.find((item) => item.role === role && item.url === url);
-    if (!asset) {
-      asset = {
-        id: `ref-${role}-${crypto.randomUUID().slice(0, 8)}`,
-        url,
-        role,
-        locked: true,
-        name: role === "character" ? "Locked character" : "Locked vehicle",
-      };
-      upsertReferenceAsset(asset);
-    } else if (asset.locked !== true) {
-      asset = { ...asset, locked: true };
-      upsertReferenceAsset(asset);
-    }
-    if (role === "character") updateBible({ characterReferenceAssetIds: [asset.id] });
-    else updateBible({ vehicleReferenceAssetIds: [asset.id] });
-  };
-
   const setProjectSpatialPreset = (key: SpatialPresetKey) => {
     updateBible({ defaultSpatialLock: spatialPreset(key) });
   };
@@ -210,6 +194,7 @@ export function Sidebar() {
   };
 
   const onGenerate = () => {
+    if (lockError) { toast.warning(lockError); return; }
     if (source === "library") return;
     if (!canGenerate.ok) {
       toast.warning(canGenerate.reason);
@@ -234,6 +219,7 @@ export function Sidebar() {
   };
 
   const onGenerateImage = async () => {
+    if (lockError) { toast.warning(lockError); return; }
     if (!imagePrompt.trim()) {
       toast.warning("Describe the image before generating");
       return;
@@ -244,7 +230,7 @@ export function Sidebar() {
     }
     setImageGenerating(true);
     try {
-      const referenceImages = selectedReferenceAssets;
+      const referenceImages = directorImage?.referenceImages ?? selectedReferenceAssets;
       const saved = await generateTextToImage({
         promptText: compiledImagePrompt,
         size: imageSize,
@@ -318,18 +304,16 @@ export function Sidebar() {
 
       <ProductionBiblePanel
         bible={bible}
-        availableImages={availableImages}
-        characterReferenceUrl={characterReference?.url}
-        vehicleReferenceUrl={vehicleReference?.url}
         defaultSpatialPreset={spatialPresetKey(bible.defaultSpatialLock)}
-        onCharacterReference={(url) => setLockedReference("character", url)}
-        onVehicleReference={(url) => setLockedReference("vehicle", url)}
         onCharacterProfile={(value) => updateBible({ characterProfile: value })}
         onVehicleProfile={(value) => updateBible({ vehicleProfile: value })}
         onStylePrompt={(value) => updateBible({ stylePrompt: value })}
         onGlobalNegativePrompt={(value) => updateBible({ negativePrompt: value })}
         onDefaultSpatialPreset={setProjectSpatialPreset}
       />
+
+      {directorShot && <ShotLockAssignments shot={directorShot} />}
+      {lockError && <p role="alert">{lockError}</p>}
 
       {mode === "textToImage" ? (
         <TextToImagePanel
@@ -499,12 +483,7 @@ export function Sidebar() {
 
 function ProductionBiblePanel({
   bible,
-  availableImages,
-  characterReferenceUrl,
-  vehicleReferenceUrl,
   defaultSpatialPreset,
-  onCharacterReference,
-  onVehicleReference,
   onCharacterProfile,
   onVehicleProfile,
   onStylePrompt,
@@ -512,12 +491,7 @@ function ProductionBiblePanel({
   onDefaultSpatialPreset,
 }: {
   bible: ProductionBible;
-  availableImages: string[];
-  characterReferenceUrl?: string;
-  vehicleReferenceUrl?: string;
   defaultSpatialPreset: SpatialPresetKey;
-  onCharacterReference: (url: string) => void;
-  onVehicleReference: (url: string) => void;
   onCharacterProfile: (value: string) => void;
   onVehicleProfile: (value: string) => void;
   onStylePrompt: (value: string) => void;
@@ -529,15 +503,7 @@ function ProductionBiblePanel({
       <summary className="label">Production Bible</summary>
       <div className="select-desc">Project-wide identity, vehicle, geometry, style, and negative rules automatically compile into every Agnes request.</div>
 
-      <div className="field-stack">
-        <label className="label" htmlFor="locked-character-reference">Locked character reference</label>
-        <ReferenceSelect id="locked-character-reference" value={characterReferenceUrl ?? ""} images={availableImages} onChange={onCharacterReference} emptyLabel="No locked character" />
-      </div>
-
-      <div className="field-stack">
-        <label className="label" htmlFor="locked-vehicle-reference">Locked vehicle reference</label>
-        <ReferenceSelect id="locked-vehicle-reference" value={vehicleReferenceUrl ?? ""} images={availableImages} onChange={onVehicleReference} emptyLabel="No locked vehicle" />
-      </div>
+      <ProductionLocks />
 
       <div className="field-stack">
         <div className="label">Character lock description</div>
@@ -734,30 +700,6 @@ function RequestInspector({
   );
 }
 
-function ReferenceSelect({
-  id,
-  value,
-  images,
-  onChange,
-  emptyLabel,
-}: {
-  id: string;
-  value: string;
-  images: string[];
-  onChange: (value: string) => void;
-  emptyLabel: string;
-}) {
-  return (
-    <div className="select-wrap">
-      <select id={id} className="select" value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">{emptyLabel}</option>
-        {images.map((url, index) => <option key={url} value={url}>Reference {index + 1}</option>)}
-      </select>
-      <span className="select-chevron">▾</span>
-    </div>
-  );
-}
-
 function SpatialPresetSelect({
   value,
   includeProject,
@@ -794,11 +736,6 @@ function spatialPresetKey(lock?: SpatialLock | null): SpatialPresetKey {
   if (lock.cameraPosition === "FRONT_PASSENGER_INTERIOR" && lock.rearviewMirrorShows === "ROAD_BEHIND_AND_COMPETITORS") return "usMirror";
   if (lock.cameraPosition === "DRIVER_SIDE_EXTERIOR") return "usExterior";
   return "none";
-}
-
-function findBibleReference(referenceAssets: ReferenceAsset[], ids?: string[]): ReferenceAsset | undefined {
-  const first = ids?.[0];
-  return first ? referenceAssets.find((asset) => asset.id === first) : undefined;
 }
 
 type CanGenerate = { ok: true; reason?: string } | { ok: false; reason: string };
