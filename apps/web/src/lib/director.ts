@@ -167,6 +167,7 @@ export function directorScenePrompt(shot: DirectorShot): string {
     `Mood: ${shot.mood}.`,
     `Location / world: ${shot.location}.`,
     `Musical energy: ${energy}.`,
+    shot.performerArtist ? `Timed vocalist / performer: ${shot.performerArtist}. If a person is visibly performing or lip-syncing in this shot, it must be the Character Lock assigned to this artist; do not substitute another artist.` : "",
     shot.hero ? "Treat this as a hero image: strong subject clarity, premium composition, and memorable visual impact." : "Keep the composition clear and editorially useful for a music-video cut.",
   ].join(" ");
 }
