@@ -268,7 +268,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
     }
     const sameModeRevision = Boolean(
       directorPlan &&
-      Boolean(directorPlan.promo) === Boolean(promo),
+      (directorPlan.promo?.kind ?? "full") === (promo?.kind ?? "full"),
     );
     const revising = sameModeRevision;
     const request = directorRequest.trim() || (revising && selectedStyle.prompt
@@ -276,9 +276,11 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
       : "");
     setBusy(revising ? "revision" : "treatment");
     clearMessages();
-    setStatus(promo
-      ? "Building a generated promo music video treatment and shot plan…"
-      : revising
+    setStatus(promo?.kind === "music"
+      ? "Building a music video promo treatment and shot plan from the song and Director settings…"
+      : promo?.kind === "product"
+        ? "Building a product promo treatment and shot plan…"
+        : revising
         ? "Director is revising the treatment and shot plan…"
         : "Building a production-ready treatment and shot plan with Azure…");
     try {
@@ -295,9 +297,11 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
       if (useStore.getState().songId !== songId) return;
       applyProfessionalDirectorPlan(result.plan, result.productionBible);
       setDirectorRequest("");
-      setStatus(promo
-        ? "Promo music video plan is ready. Review the moving-shot plan before generating images."
-        : revising
+      setStatus(promo?.kind === "music"
+        ? "Music video promo plan is ready. Review the moving-shot plan before generating images."
+        : promo?.kind === "product"
+          ? "Product promo plan is ready. Review the moving-shot plan before generating images."
+          : revising
           ? "Director revision applied. Review the updated shot plan."
           : "Professional treatment and shot plan are ready. Review the plan before generating images.");
     } catch (err) {
@@ -895,7 +899,7 @@ function TreatmentStep({
         <div className="director-stage-card director-stage-approved">
           <strong>{plan.treatment.title}</strong>
           <p>{plan.treatment.concept}</p>
-          {plan.promo && <p><strong>Promo:</strong> {plan.promo.productName} · {plan.promo.duration}s · {plan.promo.aspectRatio}</p>}
+          {plan.promo && <p><strong>Promo:</strong> {plan.promo.kind === "product" ? plan.promo.productName : "Music Video Promo"} · {plan.promo.duration}s · {plan.promo.aspectRatio}</p>}
           <p><strong>Style:</strong> {plan.treatment.style}</p>
           <p><strong>Pacing:</strong> {plan.treatment.pacing}</p>
         </div>
@@ -1157,7 +1161,7 @@ function EditStep({
         <div><h2>Final Edit</h2><p>Combine the approved video takes with the original uploaded song as the final soundtrack.</p></div>
       </div>
       <div className="director-stage-card director-stage-approved">
-        <strong>{promo ? `${promo.duration}s promo · ${promo.aspectRatio} · ${promo.productName}` : "Ready to render"}</strong>
+        <strong>{promo ? `${promo.kind === "product" ? promo.productName : "Music Video Promo"} · ${promo.duration}s · ${promo.aspectRatio}` : "Ready to render"}</strong>
         <p>Generated clip audio is discarded. The original song remains the final music track.</p>
       </div>
       <div className="director-approval-bar">
@@ -1184,7 +1188,7 @@ function FinalStep({ url, promo, onBack }: { url: string; promo?: DirectorPromoB
     <section className="director-panel">
       <div className="director-section-heading">
         <span className="director-step-number">9</span>
-        <div><h2>Final Video</h2><p>{promo ? `${promo.productName} · ${promo.duration}s · ${promo.aspectRatio} promo music video` : "Your rendered music video is ready to preview or download."}</p></div>
+        <div><h2>Final Video</h2><p>{promo ? `${promo.kind === "product" ? promo.productName : "Music Video Promo"} · ${promo.duration}s · ${promo.aspectRatio}` : "Your rendered music video is ready to preview or download."}</p></div>
       </div>
       <video src={url} controls playsInline preload="metadata" style={{ width: "100%", maxWidth: 960 }} />
       <div className="director-action-row">
