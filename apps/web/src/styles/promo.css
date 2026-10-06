@@ -237,3 +237,8 @@
 .promo-workspace { overflow-y: auto; }
 .promo-header, .promo-website-panel, .promo-website-plan-actions { flex-shrink: 0; }
 .promo-grid { flex: 0 0 auto; min-height: 680px; }
+
+.promo-editor-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.promo-production-status { padding: 20px; margin: 16px 0; border: 1px solid #5262a8; border-radius: 12px; background: #17203b; color: #f1f5ff; }
+.promo-production-status [role="alert"] { color: #ffb4b4; }
+.promo-production-status .btn { margin-right: 8px; }

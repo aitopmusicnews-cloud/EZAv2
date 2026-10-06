@@ -3,20 +3,21 @@ import { getErrorMessage, PromoAdDraft, PromoWebsiteSource, type PromoAdBrief } 
 import { generateWebsiteAd, importPromoWebsite } from "../lib/api.js";
 
 const STORAGE_KEY = "ezav2-website-promo-brief-v1";
-type Fields = { url: string; productName: string; facts: string; audience: string; callToAction: string; duration: 15 | 30 | 60 };
+type Fields = { url: string; productName: string; facts: string; audience: string; callToAction: string; duration: 15 | 30 | 60; creativeDirection?: string };
 const initial: Fields = { url: "", productName: "", facts: "", audience: "", callToAction: "Visit our website to learn more.", duration: 30 };
 function savedFields(): Fields {
   try {
     const data = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
     if (!data || ![15, 30, 60].includes(data.duration)) return initial;
     if (["url", "productName", "facts", "audience", "callToAction"].some((key) => typeof data[key] !== "string")) return initial;
-    return { url: data.url.slice(0, 2048), productName: data.productName.slice(0, 300), facts: data.facts.slice(0, 20000), audience: data.audience.slice(0, 500), callToAction: data.callToAction.slice(0, 500), duration: data.duration };
+    return { url: data.url.slice(0, 2048), productName: data.productName.slice(0, 300), facts: data.facts.slice(0, 20000), audience: data.audience.slice(0, 500), callToAction: data.callToAction.slice(0, 500), duration: data.duration, creativeDirection: typeof data.creativeDirection === "string" ? data.creativeDirection.slice(0, 2000) : "" };
   } catch { return initial; }
 }
 
-export function PromoWebsiteImport({ disabled, onUseDraft }: {
+export function PromoWebsiteImport({ disabled, onUseDraft, onProduce }: {
   disabled: boolean;
   onUseDraft: (draft: PromoAdDraft, duration: number) => void;
+  onProduce?: (draft: PromoAdDraft, duration: 15 | 30 | 60) => void;
 }) {
   const [fields, setFields] = useState<Fields>(savedFields);
   const [source, setSource] = useState<PromoWebsiteSource | null>(null);
@@ -44,14 +45,14 @@ export function PromoWebsiteImport({ disabled, onUseDraft }: {
     setBusy("draft"); setError(""); setDraft(null); setApplied(false);
     try {
       const brief: PromoAdBrief = { productName: fields.productName, facts: fields.facts, audience: fields.audience,
-        callToAction: fields.callToAction, duration: fields.duration, reviewed: true,
+        callToAction: fields.callToAction, duration: fields.duration, reviewed: true, creativeDirection: fields.creativeDirection,
         ...(source ? { sourceUrl: source.sourceUrl } : {}) };
       setDraft(PromoAdDraft.parse(await generateWebsiteAd(brief)));
     } catch (err) { setError(getErrorMessage(err)); } finally { setBusy(null); }
   }
   return <section className="promo-website-panel" aria-label="Create promo from a website">
     <h2>Create a promo from a website</h2>
-    <p>Import a public product page, review the details, then create an ad script and visual plan.</p>
+    <p>Import a public product page, review the details, then generate a finished video with moving scenes and narration. Upload exact product shots below if you want them included; the remaining shots are generated.</p>
     <div className="promo-website-url">
       <label className="promo-field"><span>Product-page URL</span><input type="url" maxLength={2048} value={fields.url} placeholder="https://your-product.com" disabled={locked} onChange={(event) => edit("url", event.target.value)} /></label>
       <button type="button" className="btn" disabled={locked || !fields.url.trim()} onClick={() => void importPage()}>{busy === "import" ? "Reading website…" : "Import product page"}</button>
@@ -64,15 +65,17 @@ export function PromoWebsiteImport({ disabled, onUseDraft }: {
       <label className="promo-field promo-website-wide"><span>Product details — review or paste your own</span><textarea maxLength={20000} value={fields.facts} disabled={locked} placeholder="Features, benefits, price, limitations and what the product actually does. You can paste these if the site cannot be read." onChange={(event) => edit("facts", event.target.value)} /></label>
       <label className="promo-field"><span>Call to action</span><input maxLength={500} value={fields.callToAction} disabled={locked} onChange={(event) => edit("callToAction", event.target.value)} /></label>
       <label className="promo-field"><span>Ad length</span><select value={fields.duration} disabled={locked} onChange={(event) => edit("duration", Number(event.target.value) as Fields["duration"])}><option value={15}>15 seconds</option><option value={30}>30 seconds</option><option value={60}>60 seconds</option></select></label>
+      <label className="promo-field promo-website-wide"><span>Your creative direction</span><textarea maxLength={2000} disabled={locked} value={fields.creativeDirection ?? ""} placeholder="Describe the look, audience, setting and feeling you want. Example: a confident, cinematic promo showing independent musicians creating in a real studio." onChange={(event) => edit("creativeDirection", event.target.value)} /></label>
     </div>
     <label className="promo-website-review"><input type="checkbox" checked={reviewed} disabled={locked} onChange={(event) => setReviewed(event.target.checked)} /> I reviewed the product details, price and claims.</label>
     <button type="button" className="btn primary" disabled={locked || !reviewed || !fields.productName.trim() || fields.facts.trim().length < 30 || !fields.callToAction.trim()} onClick={() => void createDraft()}>{busy === "draft" ? "Writing ad draft…" : "Create ad draft"}</button>
     {draft && <div className="promo-website-draft">
       <h3>{draft.headline}</h3>
       <label className="promo-field"><span>Ad narration — review before use</span><textarea maxLength={4096} disabled={locked} value={draft.voiceover} onChange={(event) => { setDraft({ ...draft, voiceover: event.target.value }); setApplied(false); }} /></label>
-      <ol>{draft.scenes.map((scene, index) => <li key={index}><strong>{(fields.duration / draft.scenes.length).toFixed(1)} seconds:</strong> {scene.visual}{scene.onScreenText && <p>Suggested text: {scene.onScreenText}</p>}</li>)}</ol>
+      <ol>{draft.scenes.map((scene, index) => <li key={index}><label className="promo-field"><span>Shot {index + 1} · {(fields.duration / draft.scenes.length).toFixed(1)} seconds</span><textarea maxLength={1000} disabled={locked} value={scene.visual} onChange={(event) => { setDraft({ ...draft, scenes: draft.scenes.map((item, i) => i === index ? { ...item, visual: event.target.value } : item) }); setApplied(false); }} /></label></li>)}</ol>
       {draft.reviewNotes.length > 0 && <div><strong>Check before publishing</strong><ul>{draft.reviewNotes.map((note, index) => <li key={index}>{note}</li>)}</ul></div>}
-      <button type="button" className="btn primary" disabled={locked || !reviewed || !draft.voiceover.trim()} onClick={() => { onUseDraft(draft, fields.duration); setApplied(true); }}>Use draft in Promo Mode</button>
+      {onProduce && <><p>Creates real video shots, narration and the finished MP4. Enable “Include the shots below” to reuse your uploaded visuals; otherwise every shot is generated. Uses your configured generation services. No added text. Optional music can be uploaded below before starting.</p><button type="button" className="btn primary" disabled={locked || !reviewed || !draft.voiceover.trim() || draft.scenes.some((scene) => !scene.visual.trim())} onClick={() => onProduce(draft, fields.duration)}>Create finished promo</button></>}
+      <button type="button" className="btn" disabled={locked || !reviewed || !draft.voiceover.trim()} onClick={() => { onUseDraft(draft, fields.duration); setApplied(true); }}>Use draft in Promo Mode</button>
       {applied && <p role="status">Narration is loaded below. Add your product images or clips, arrange the visual plan, generate voiceover, then export.</p>}
     </div>}
   </section>;

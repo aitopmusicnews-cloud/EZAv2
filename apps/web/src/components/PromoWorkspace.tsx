@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getErrorMessage } from "@mvs/shared";
+import { getErrorMessage, type PromoAdDraft, type WebsitePromoJob } from "@mvs/shared";
 import {
+  produceWebsitePromo, getWebsitePromo, resumeWebsitePromo,
   uploadAudioAsset,
   generatePromoVoiceover,
   uploadImage,
@@ -14,6 +15,10 @@ import { PromoWebsiteImport } from "./PromoWebsiteImport.js";
 import "../styles/promo.css";
 
 const MAX_SCENES = 10;
+const WEBSITE_PROMO_KEY = "ezav2-finished-website-promo";
+function savedProductionId(): string | null {
+  try { return localStorage.getItem(WEBSITE_PROMO_KEY); } catch { return null; }
+}
 const ACTIVE_PROMO_RENDER_KEY = "ezav2-active-promo-render";
 const PROMO_POLL_INTERVAL_MS = 3000;
 type Motion = "static" | "push-in" | "zoom-out" | "pan-left" | "pan-right";
@@ -55,6 +60,13 @@ async function waitForPromoRender(
 }
 
 export function PromoWorkspace() {
+  const [useExistingShots, setUseExistingShots] = useState(false);
+  const [productionId, setProductionId] = useState<string | null>(savedProductionId);
+  const [production, setProduction] = useState<WebsitePromoJob | null>(null);
+  const [productionConnectionError, setProductionConnectionError] = useState<string | null>(null);
+  const [pollAttempt, setPollAttempt] = useState(0);
+  const productionStarting = useRef(false);
+  const productionActive = !!productionId && (!production || production.state === "running");
   const [websitePlan, setWebsitePlan] = useState<{ scenes: import("@mvs/shared").PromoAdDraft["scenes"]; duration: number } | null>(null);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -112,6 +124,59 @@ export function PromoWorkspace() {
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    if (!productionId) return;
+    let cancelled = false;
+    const applyJob = (job: WebsitePromoJob) => {
+      setProduction(job);
+      setVoiceScript(job.request.draft.voiceover);
+      setAspectRatio(job.request.aspectRatio);
+      setMusic(job.request.musicUrl ? { name: "Promo music", url: job.request.musicUrl } : null);
+      setMusicVolume(job.request.musicVolume); setVoiceVolume(job.request.voiceoverVolume); setDuckMusic(job.request.duckMusic);
+      setWebsitePlan({ scenes: job.request.draft.scenes, duration: job.request.duration });
+      setScenes(job.scenes.map((scene, index) => ({
+        ...scene, id: `${job.id}-${index}`, name: `Shot ${index + 1}`, motion: "static", fit: index < job.request.shots.length ? "contain" : "cover",
+        focalX: 50, focalY: 50, uiSafe: index < job.request.shots.length, text: "", textIn: 0, textOut: scene.duration,
+        textPosition: "bottom", productionNotes: job.request.draft.scenes[index]!.visual,
+      })));
+      if (job.voiceoverUrl) setVoice({ name: "Promo narration", url: job.voiceoverUrl });
+      if (job.state === "succeeded" && job.url) setRenderUrl(job.url);
+    };
+    void (async () => {
+      try {
+        setProductionConnectionError(null);
+        // Restarts a checkpointed job after a server restart, without duplicating an active worker.
+        let job = await resumeWebsitePromo(productionId);
+        while (!cancelled) {
+          applyJob(job);
+          if (job.state !== "running") break;
+          await sleep(3000);
+          if (cancelled) break;
+          job = await getWebsitePromo(productionId);
+        }
+      } catch (err) {
+        if (!cancelled) setProductionConnectionError(getErrorMessage(err));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [productionId, pollAttempt]);
+
+  async function createFinishedPromo(draft: PromoAdDraft, duration: 15 | 30 | 60) {
+    if (productionStarting.current || productionActive) return;
+    if (useExistingShots && scenes.length > draft.scenes.length) return setError(`This draft has ${draft.scenes.length} shots. Remove extra uploaded shots before starting.`);
+    productionStarting.current = true;
+    setBusy("Starting promo production…"); setError(null); setRenderUrl(null); setRenderStatus(null);
+    try {
+      const job = await produceWebsitePromo({
+        draft, duration, aspectRatio, shots: useExistingShots ? scenes.map(({ url, kind }) => ({ url, kind })) : [],
+        musicUrl: music?.url, musicVolume, voiceoverVolume: voiceVolume, duckMusic,
+      });
+      try { localStorage.setItem(WEBSITE_PROMO_KEY, job.id); } catch { /* Current session can still poll. */ }
+      setProduction(job); setProductionId(job.id); setProductionConnectionError(null);
+    } catch (err) { setError(getErrorMessage(err)); }
+    finally { productionStarting.current = false; setBusy(null); }
+  }
+
   async function addScene(file: File, replaceId?: string) {
     if (!isImage(file) && !isVideo(file)) return setError("Use an image or video file.");
     if (!replaceId && scenes.length >= MAX_SCENES) return setError("Promo Mode supports up to 10 scenes.");
@@ -125,7 +190,7 @@ export function PromoWorkspace() {
         motion: kind === "image" ? "push-in" : "static", fit: "cover", focalX: 50, focalY: 50, uiSafe: false,
         text: "", textIn: 0.2, textOut: 4.7, textPosition: "bottom", productionNotes: "",
       };
-      setScenes((xs) => [...xs, scene]); setSelectedId(scene.id);
+      setScenes((xs) => [...xs, scene]); setSelectedId(scene.id); setUseExistingShots(true);
     } catch (e) { setError(getErrorMessage(e)); } finally { setBusy(null); }
   }
 
@@ -201,24 +266,32 @@ export function PromoWorkspace() {
       <div className="promo-header-actions">
         <span className={`promo-duration ${onTarget ? "on-target" : "off-target"}`}>{totalDuration.toFixed(1)}s · target {targetDuration ? `${targetDuration}s` : "30–35s"}</span>
         <a className="btn ghost" href="/">← Music Video</a>
-        <button className="btn primary" disabled={!scenes.length || !!busy || renderInProgress} onClick={() => void exportPromo()}>{renderInProgress ? renderStatus : "Export Promo MP4"}</button>
+        <button className="btn primary" disabled={!scenes.length || !!busy || renderInProgress || productionActive} onClick={() => void exportPromo()}>{renderInProgress ? renderStatus : "Export Promo MP4"}</button>
         {renderUrl && <a className="btn" href={renderUrl} target="_blank" rel="noreferrer">View render</a>}
       </div>
     </header>
 
-    <PromoWebsiteImport disabled={!!busy || renderInProgress} onUseDraft={(draft, duration) => {
+    {scenes.length > 0 && <label className="promo-website-review"><input type="checkbox" checked={useExistingShots} disabled={productionActive || !!busy || renderInProgress} onChange={(event) => setUseExistingShots(event.target.checked)} /> Include the {scenes.length} shots below in my next promo, in their current order. Generate the remaining shots.</label>}
+    <PromoWebsiteImport onProduce={(draft, duration) => void createFinishedPromo(draft, duration)} disabled={!!busy || renderInProgress || productionActive} onUseDraft={(draft, duration) => {
       setVoiceScript(draft.voiceover); setVoice(null); setRenderUrl(null);
       setWebsitePlan({ scenes: draft.scenes, duration });
     }} />
+    {productionId && <section className="promo-production-status" aria-live="polite">
+      <strong>{production?.message ?? "Reconnecting to your promo…"}</strong>
+      {production && <p>{production.scenes.length}/{production.request.draft.scenes.length} shots ready. {production.state === "running" ? "Production runs on the server; you can return to this page later." : ""}</p>}
+      {(production?.error || productionConnectionError) && <p role="alert">{productionConnectionError ?? production?.error}</p>}
+      {(production?.state === "failed" || productionConnectionError) && <button className="btn primary" onClick={() => setPollAttempt((n) => n + 1)}>Resume saved promo</button>}
+      {productionConnectionError && <button className="btn" onClick={() => { setProductionId(null); setProduction(null); setProductionConnectionError(null); localStorage.removeItem(WEBSITE_PROMO_KEY); }}>Dismiss status</button>}
+    </section>}
     {websitePlan && <div className="promo-website-plan-actions">
       <p>Visual plan: {websitePlan.scenes.length} scenes · {websitePlan.duration}s. Add that many images or clips to apply the scene timing and production notes.</p>
-      <button type="button" className="btn" disabled={!!busy || renderInProgress || scenes.length !== websitePlan.scenes.length} onClick={() => {
+      <button type="button" className="btn" disabled={!!busy || renderInProgress || productionActive || scenes.length !== websitePlan.scenes.length} onClick={() => {
         const seconds = websitePlan.duration / websitePlan.scenes.length;
         setScenes((current) => current.map((scene, index) => ({ ...scene, duration: seconds, productionNotes: websitePlan.scenes[index]!.visual, text: "", textIn: 0, textOut: seconds })));
         setRenderUrl(null);
       }}>Apply visual plan to uploaded scenes</button>
     </div>}
-    <div className="promo-grid">
+    <fieldset disabled={productionActive || !!busy || renderInProgress} className="promo-editor-fieldset"><div className="promo-grid">
       <aside className="promo-scenes-panel">
         <div className="promo-panel-heading"><div><strong>Scenes</strong><span>{scenes.length}/{MAX_SCENES}</span></div><button className="btn" disabled={scenes.length >= MAX_SCENES || !!busy} onClick={() => addRef.current?.click()}>+ Add one</button></div>
         <input ref={addRef} hidden type="file" accept="image/*,video/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void addScene(f); e.target.value = ""; }} />
@@ -247,6 +320,7 @@ export function PromoWorkspace() {
         {renderUrl && <section className="promo-render-ready">
           <strong>Render ready</strong>
           <span>Your promo finished successfully.</span>
+          <video src={renderUrl} controls playsInline preload="metadata" style={{ width: "100%", maxHeight: 520 }} />
           <div>
             <a className="btn primary" href={renderUrl} target="_blank" rel="noreferrer">View render</a>
             <a className="btn" href={renderUrl} download>Download MP4</a>
@@ -278,7 +352,7 @@ export function PromoWorkspace() {
         <p className="promo-muted">Uses Azure gpt-4o-mini-tts with Alloy. Production notes are never sent to speech. You can still upload or replace voiceover audio manually.</p>
         {error && <div className="promo-error">{error}</div>}{renderStatus && !renderUrl && <div className="promo-status">{renderStatus}</div>}
       </aside>
-    </div>
+    </div></fieldset>
   </div>;
 }
 

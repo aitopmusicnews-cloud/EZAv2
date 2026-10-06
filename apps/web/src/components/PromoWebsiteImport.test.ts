@@ -11,10 +11,10 @@ let host: HTMLDivElement;
 afterEach(async () => { if (root) await act(async () => root.unmount()); host?.remove(); localStorage.clear(); vi.clearAllMocks(); });
 const page = { sourceUrl: "https://example.com/product", title: "Studio", description: "Tools for creators.", content: "Edit and export your own product videos using uploaded photos and footage.", fetchedAt: new Date().toISOString(), truncated: false };
 const draft = { headline: "Your next promo", voiceover: "Create your next promo with Studio.", scenes: [1, 2, 3].map(() => ({ visual: "Show an actual product screenshot.", onScreenText: "Studio" })), reviewNotes: [] };
-async function mount() {
+async function mount(onProduce = vi.fn()) {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   const onUseDraft = vi.fn();
-  await act(async () => root.render(createElement(PromoWebsiteImport, { disabled: false, onUseDraft })));
+  await act(async () => root.render(createElement(PromoWebsiteImport, { disabled: false, onUseDraft, onProduce })));
   return onUseDraft;
 }
 function button(text: string) { return Array.from(host.querySelectorAll("button")).find((el) => el.textContent === text)!; }
@@ -39,6 +39,16 @@ describe("website promo workflow", () => {
     expect(button("Create ad draft").disabled).toBe(true);
     expect(button("Use draft in Promo Mode")).toBeUndefined();
     expect(JSON.parse(localStorage.getItem("ezav2-website-promo-brief-v1")!).duration).toBe(60);
+  });
+  it("starts finished production with the reviewed draft and chosen duration", async () => {
+    localStorage.setItem("ezav2-website-promo-brief-v1", JSON.stringify({ url: page.sourceUrl, productName: page.title, facts: page.content, audience: "Creators", callToAction: "Visit the website", duration: 30, creativeDirection: "Warm studio light, energetic tracking shots" }));
+    vi.mocked(generateWebsiteAd).mockResolvedValue(draft);
+    const onProduce = vi.fn(); await mount(onProduce);
+    await click(host.querySelector('input[type="checkbox"]')!);
+    await click(button("Create ad draft"));
+    await click(button("Create finished promo"));
+    expect(onProduce).toHaveBeenCalledWith(draft, 30);
+    expect(generateWebsiteAd).toHaveBeenCalledWith(expect.objectContaining({ creativeDirection: "Warm studio light, energetic tracking shots" }));
   });
   it("preserves editable manual details when a website cannot be read", async () => {
     localStorage.setItem("ezav2-website-promo-brief-v1", JSON.stringify({ url: page.sourceUrl, productName: page.title, facts: page.content, audience: "", callToAction: "Learn more", duration: 30 }));

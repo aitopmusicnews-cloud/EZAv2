@@ -515,3 +515,15 @@ az containerapp update --name $CONTAINER_APP --resource-group $RESOURCE_GROUP --
 - Azure Container Apps environment variables/secrets: <https://learn.microsoft.com/azure/container-apps/environment-variables>
 - Azure Container Apps ingress: <https://learn.microsoft.com/azure/container-apps/ingress-how-to>
 - Azure Container Apps health probes: <https://learn.microsoft.com/azure/container-apps/health-probes>
+
+### Website → finished promo (`/promo`)
+
+1. Import the public product URL and review the imported facts, audience and call to action.
+2. Choose 15, 30 or 60 seconds, add your creative direction, and click **Create ad draft**. Edit the narration and individual shot directions as needed.
+3. Choose the output format in Shot Controls (9:16, 16:9, 4:5 or 1:1). Optionally upload background music or exact product images/footage. **Include the shots below** preserves those assets in their current order; leave it unchecked to generate all shots.
+4. Click **Create finished promo**. The server creates narration, generates moving video shots sequentially with Agnes, assembles them, mixes optional music and returns an inline preview plus Download MP4. Generated promos contain no added text. Narration is fitted to the selected runtime so the closing line is not truncated.
+5. A failed stage exposes **Resume saved promo**. Completed shots and narration are reused. The last job reconnects when the page reloads; generation does not depend on keeping the tab open. Production is serialized within the server process and requests are spaced between shots.
+
+Uses the existing `AGNES_API_KEY`, Azure main-model configuration (drafts), Azure TTS endpoint/key (narration), and FFmpeg/ffprobe. No new provider is required. The importer reads website text; it does not scrape media or execute JavaScript. For exact product interfaces, logos and certificates, upload authentic assets; generated context shots are instructed not to invent readable interfaces. Background music is optional and user-supplied.
+
+Job checkpoints use the configured storage backend (`website-promos/`). Keep the existing S3 storage on Render to retain jobs/assets across redeploys; ephemeral local storage cannot survive replacement of the container. Run this worker on one service instance: its queue and concurrency guard are process-local. An interrupted final render can be rebuilt from saved shots. Requests interrupted between provider submission and checkpoint persistence may require recreating that shot.
