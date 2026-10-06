@@ -128,7 +128,7 @@ describe("generateProfessionalTreatment", () => {
 });
 
 describe("product promo treatment timing", () => {
-  const promo = { productName: "Studio", facts: "A music video editor with reviewed product facts for a realistic promo.", audience: "Creators", casting: "One adult musician", callToAction: "Visit the site", duration: 6, reviewed: true as const };
+  const promo = { productName: "Studio", facts: "A music video editor with reviewed product facts for a realistic promo.", audience: "Creators", casting: "One adult musician", callToAction: "Visit the site", duration: 6, aspectRatio: "9:16" as const, reviewed: true as const };
   it("uses reviewed product data and keeps every shot within the promo while preserving original analysis", async () => {
     const fetchImpl = vi.fn(async (_url: any, init: any) => {
       const body = JSON.parse(init.body);
@@ -139,8 +139,16 @@ describe("product promo treatment timing", () => {
       expect(body.input[0].content[0].text).toContain("continuous filmed action");
       return new Response(JSON.stringify({ output_text: JSON.stringify({
         treatment: { title: "Studio Promo", concept: "Music-led product film", style: "realism", pacing: "rhythmic" },
-        productionBible: { negativePrompt: "duplicate subjects, robotic motion" },
-        shots: input.fixedTimingSlots.map((slot: any) => ({ index: slot.index, role: "Product", idea: "The musician moves naturally through the studio", camera: "tracking", framing: "medium", mood: "confident", location: "studio", hero: false })),
+        productionBible: {
+          characterProfile: "One consistent adult musician",
+          wardrobeProfile: "Consistent artist wardrobe",
+          locationProfile: "One coherent studio",
+          stylePrompt: "cinematic product realism",
+          colorPalette: "controlled neutral palette",
+          continuityPrompt: "preserve identity, wardrobe and product continuity",
+          negativePrompt: "duplicate subjects, robotic motion, identity drift, malformed anatomy, text, logos, watermarks, continuity breaks",
+        },
+        shots: input.fixedTimingSlots.map((slot: any) => ({ index: slot.index, role: "Product", idea: "The musician moves naturally through the studio", camera: "tracking", framing: "medium", mood: "confident", location: "studio", hero: false, characterIds: [], assetIds: [] })),
       }) }));
     });
     const result = await generateProfessionalTreatment({ analysis, understanding, vision: "", promo }, { endpoint: "https://example.test", apiKey: "test", fetchImpl });
