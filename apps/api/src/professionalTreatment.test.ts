@@ -169,6 +169,8 @@ describe("product promo treatment timing", () => {
       expect(input.promoBrief.facts).toBeUndefined();
       expect(input.promoBrief.callToAction).toBeUndefined();
       expect(body.input[0].content[0].text).toContain('promoBrief.kind is "music"');
+      expect(body.input[0].content[0].text).toContain("Do not add on-screen text");
+      expect(body.input[0].content[0].text).toContain("No titles, captions, lyrics, lower-thirds");
       return new Response(JSON.stringify({ output_text: JSON.stringify({
         treatment: { title: "Song Teaser", concept: "Artist-first teaser cut to the track", style: "cinematic", pacing: "fast" },
         productionBible: {
