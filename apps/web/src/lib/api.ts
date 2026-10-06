@@ -147,6 +147,7 @@ export type RenderRequest = {
   projectId: string;
   audioUrl: string;
   duration: number;
+  aspectRatio?: "9:16" | "16:9" | "4:5" | "1:1";
   clips: Array<{
     start: number;
     end: number;
@@ -308,7 +309,7 @@ export type PromoTextPosition = "top" | "center" | "bottom";
 export type PromoRenderRequest = {
   projectId: string;
   duration: number;
-  aspectRatio: "9:16" | "16:9" | "4:5";
+  aspectRatio: "9:16" | "16:9" | "4:5" | "1:1";
   scenes: Array<{
     url: string;
     kind: "image" | "video";
