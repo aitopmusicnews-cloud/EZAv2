@@ -54,6 +54,8 @@ The Advanced Editor exposes lower-level timeline controls for Text → Image, Te
 
 The current Professional Director supports up to **3 Character Locks**, Asset Locks for vehicle/wardrobe/prop/location/product/style, per-shot lock assignment, Production Bible continuity, spatial-lock rules, and negative-prompt continuity controls.
 
+Each assigned Character Lock represents one unique person. Director image/video prompts explicitly prohibit cloned bodies, duplicate faces, twin copies, repeated performers, or extra copies of the same locked identity. Reflections are allowed only when the shot explicitly calls for one and must remain a reflection, not a second physical character.
+
 At least one active Character Lock with a valid reference image is currently required before Professional Director storyboard generation begins.
 
 ### Platform formats
