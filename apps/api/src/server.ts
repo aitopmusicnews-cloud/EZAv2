@@ -388,6 +388,7 @@ const RenderBody = z
     projectId: SafeId,
     audioUrl: z.string().url(),
     duration: z.number().finite().positive().max(MAX_RENDER_DURATION_S),
+    aspectRatio: z.enum(["9:16", "16:9", "4:5", "1:1"]).default("16:9"),
     clips: z
       .array(
         z
@@ -453,7 +454,7 @@ const PromoTextOverlayBody = z.object({
 const PromoRenderBody = z.object({
   projectId: SafeId,
   duration: z.number().finite().positive().max(120),
-  aspectRatio: z.enum(["9:16", "16:9", "4:5"]).default("9:16"),
+  aspectRatio: z.enum(["9:16", "16:9", "4:5", "1:1"]).default("9:16"),
   scenes: z.array(PromoSceneBody).min(1).max(10),
   textOverlays: z.array(PromoTextOverlayBody).max(30).default([]),
   musicUrl: z.string().url().optional(),

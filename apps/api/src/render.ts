@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { mkdir, rm, unlink, writeFile } from "node:fs/promises";
 import { paths, storage } from "./storage.js";
 import { config } from "./config.js";
@@ -19,6 +19,7 @@ export type RenderRequest = {
   audioUrl: string;
   duration: number;
   clips: RenderClip[];
+  aspectRatio?: "9:16" | "16:9" | "4:5" | "1:1";
   /** When true, apply a 150ms fade-in/out at each clip edge. Off by default. */
   fades?: boolean;
 };
@@ -31,9 +32,14 @@ type TimelineSlice = {
 };
 
 const FADE_DURATION = 0.15;
-const WIDTH = 1280;
-const HEIGHT = 720;
 const FPS = 30;
+
+function outputSize(aspectRatio: RenderRequest["aspectRatio"]): { width: number; height: number } {
+  if (aspectRatio === "9:16") return { width: 720, height: 1280 };
+  if (aspectRatio === "4:5") return { width: 720, height: 900 };
+  if (aspectRatio === "1:1") return { width: 720, height: 720 };
+  return { width: 1280, height: 720 };
+}
 const EPSILON = 0.0005;
 
 function safeProjectToken(value: string): string {
@@ -107,13 +113,14 @@ function buildTimelineSlices(req: RenderRequest): TimelineSlice[] {
 }
 
 function concatFileLine(path: string): string {
-  return `file '${path.replace(/'/g, "'\\''")}'`;
+  const absolutePath = resolve(path);
+  return `file '${absolutePath.replace(/'/g, "'\\''")}'`;
 }
 
-async function renderBlackSlice(outputPath: string, duration: number): Promise<void> {
+async function renderBlackSlice(outputPath: string, duration: number, width: number, height: number): Promise<void> {
   await runFfmpeg([
     "-f", "lavfi",
-    "-i", `color=c=black:s=${WIDTH}x${HEIGHT}:r=${FPS}:d=${duration.toFixed(6)}`,
+    "-i", `color=c=black:s=${width}x${height}:r=${FPS}:d=${duration.toFixed(6)}`,
     "-an",
     "-c:v", "libx264",
     "-preset", "veryfast",
@@ -132,6 +139,8 @@ async function renderClipSlice(
   outputPath: string,
   fades: boolean,
   probeCache: Map<string, number>,
+  width: number,
+  height: number,
 ): Promise<void> {
   const segmentDuration = sliceEnd - sliceStart;
   const slotDuration = clip.end - clip.start;
@@ -162,8 +171,8 @@ async function renderClipSlice(
   const filters = [
     `trim=start=${trimStart.toFixed(6)}:duration=${trimDuration.toFixed(6)}`,
     `setpts=${setPts}`,
-    `scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease`,
-    `pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black`,
+    `scale=${width}:${height}:force_original_aspect_ratio=decrease`,
+    `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`,
     `fps=${FPS}`,
     "setsar=1",
     `tpad=stop_mode=clone:stop_duration=${segmentDuration.toFixed(6)}`,
@@ -216,6 +225,7 @@ export async function renderTimeline(req: RenderRequest): Promise<{ url: string 
   }
 
   await mkdir(paths.RENDERS, { recursive: true });
+  const { width, height } = outputSize(req.aspectRatio);
   const outputName = `${req.projectId}.mp4`;
   const outputPath = join(paths.RENDERS, outputName);
   const workDir = join(
@@ -242,16 +252,18 @@ export async function renderTimeline(req: RenderRequest): Promise<{ url: string 
           partPath,
           req.fades === true,
           probeCache,
+          width,
+          height,
         );
       } else {
-        await renderBlackSlice(partPath, slice.end - slice.start);
+        await renderBlackSlice(partPath, slice.end - slice.start, width, height);
       }
       partPaths.push(partPath);
     }
 
     if (!partPaths.length) {
       const blackPath = join(workDir, "part-0000.mp4");
-      await renderBlackSlice(blackPath, req.duration);
+      await renderBlackSlice(blackPath, req.duration, width, height);
       partPaths.push(blackPath);
     }
 

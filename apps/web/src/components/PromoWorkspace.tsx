@@ -58,7 +58,7 @@ export function PromoWorkspace() {
   const [websitePlan, setWebsitePlan] = useState<{ scenes: import("@mvs/shared").PromoAdDraft["scenes"]; duration: number } | null>(null);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [aspectRatio, setAspectRatio] = useState<"9:16" | "16:9" | "4:5">("9:16");
+  const [aspectRatio, setAspectRatio] = useState<"9:16" | "16:9" | "4:5" | "1:1">("9:16");
   const [music, setMusic] = useState<AudioAsset | null>(null);
   const [voice, setVoice] = useState<AudioAsset | null>(null);
   const [musicVolume, setMusicVolume] = useState(0.72);
@@ -256,7 +256,7 @@ export function PromoWorkspace() {
 
       <aside className="promo-inspector">
         <div className="promo-panel-heading"><strong>Shot Controls</strong><span>{busy ?? ""}</span></div>
-        <label className="promo-field"><span>Format</span><select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value as typeof aspectRatio)}><option value="9:16">9:16 · TikTok / Reels / Shorts</option><option value="16:9">16:9 · YouTube / web</option><option value="4:5">4:5 · Instagram feed</option></select></label>
+        <label className="promo-field"><span>Format</span><select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value as typeof aspectRatio)}><option value="9:16">9:16 · TikTok / Reels / Shorts</option><option value="16:9">16:9 · YouTube / web</option><option value="4:5">4:5 · Instagram / Facebook feed · 720×900</option><option value="1:1">1:1 · Square feed · 720×720</option></select></label>
         {selected ? <>
           <div className="promo-shot-actions"><button className="btn" onClick={() => move(selected.id, -1)}>↑ Earlier</button><button className="btn" onClick={() => move(selected.id, 1)}>↓ Later</button><label className="btn promo-file-button">Replace<input hidden type="file" accept="image/*,video/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void addScene(f, selected.id); e.target.value = ""; }} /></label><button className="btn danger" onClick={() => remove(selected.id)}>Delete</button></div>
           <label className="promo-field"><span>Duration</span><input type="number" min="0.5" max="30" step="0.1" value={selected.duration} onChange={(e) => { const d = Math.max(.5, Math.min(30, Number(e.target.value) || .5)); patch(selected.id, { duration: d, textOut: Math.min(d, selected.textOut) }); }} /></label>

@@ -100,6 +100,7 @@ export function regenerateDirectorVideo(shotId: string): string {
     sectionLabel: shot.sectionLabel,
     energy: shot.energy,
     model: AGNES_VIDEO_MODEL,
+    aspectRatio: plan.promo?.aspectRatio ?? "16:9",
   });
 }
 
@@ -153,14 +154,19 @@ export async function renderDirectorFinal(
   }
   const result = await renderTimeline(
     {
-      projectId,
+      projectId: `${projectId}-export-${crypto.randomUUID().slice(0, 8)}`,
       audioUrl: state.audioUrl,
-      duration: state.analysis.duration,
+      duration: plan.promo?.duration ?? state.analysis.duration,
+      aspectRatio: plan.promo?.aspectRatio ?? "16:9",
       clips,
       fades: false,
     },
     { onUpdate },
   );
+  const current = useStore.getState();
+  if (current.songId !== state.songId || current.audioUrl !== state.audioUrl || current.directorPlan !== plan) {
+    throw new Error("The project changed during rendering. This older result was not applied; render the current plan again.");
+  }
   useStore.getState().setDirectorFinalUrl(result.url);
   useStore.getState().setDirectorStage("final");
   return result.url;

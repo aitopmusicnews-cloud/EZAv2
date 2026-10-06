@@ -30,7 +30,7 @@ export type PromoTextOverlay = {
 export type PromoRenderRequest = {
   projectId: string;
   duration: number;
-  aspectRatio: "9:16" | "16:9" | "4:5";
+  aspectRatio: "9:16" | "16:9" | "4:5" | "1:1";
   scenes: PromoScene[];
   textOverlays?: PromoTextOverlay[];
   musicUrl?: string;
@@ -47,6 +47,7 @@ function outputSize(aspectRatio: PromoRenderRequest["aspectRatio"]): { width: nu
   // render stable while still matching the app's existing generated sizes.
   if (aspectRatio === "9:16") return { width: 720, height: 1280 };
   if (aspectRatio === "4:5") return { width: 720, height: 900 };
+  if (aspectRatio === "1:1") return { width: 720, height: 720 };
   return { width: 1280, height: 720 };
 }
 

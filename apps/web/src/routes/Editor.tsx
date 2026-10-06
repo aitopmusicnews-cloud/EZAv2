@@ -25,7 +25,7 @@ export function Editor() {
         <button type="button" className="director-return" onClick={() => setAdvanced(false)}>
           ← Back to BeatSync Director
         </button>
-        <a href="/promo" className="btn primary" style={promoLaunchStyle}>Promo Mode</a>
+        <a href="/promo" className="btn primary" style={promoLaunchStyle}>Manual Promo Builder</a>
         <AdvancedEditor />
       </>
     );
@@ -33,7 +33,7 @@ export function Editor() {
 
   return (
     <>
-      <a href="/promo" className="btn primary" style={promoLaunchStyle}>Promo Mode</a>
+      <a href="/promo" className="btn primary" style={promoLaunchStyle}>Manual Promo Builder</a>
       <DirectorWorkspace onOpenAdvanced={() => setAdvanced(true)} />
     </>
   );

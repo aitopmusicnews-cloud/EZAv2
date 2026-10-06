@@ -33,6 +33,8 @@ assert.match(
 );
 assert.match(render, /"movflags", "\+faststart"|"-movflags", "\+faststart"/);
 assert.match(render, /rm\(workDir, \{ recursive: true, force: true \}\)/);
+assert.match(render, /const absolutePath = resolve\(path\)/, 'concat entries must be absolute so ffmpeg does not duplicate storage paths');
+assert.match(render, /aspectRatio\?: "9:16" \| "16:9" \| "4:5" \| "1:1"/, 'final renderer must support platform aspect ratios');
 assert.doesNotMatch(render, /lipSyncTaskId|lipSyncModel/, 'renderer must not switch audio behavior based on lip-sync metadata');
 
 const header = await readFile('apps/web/src/components/Header.tsx', 'utf8');

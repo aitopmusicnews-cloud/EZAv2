@@ -49,6 +49,7 @@ export type Job = {
     sectionLabel: string;
     energy: number;
     model: GenerationModel;
+    aspectRatio: "9:16" | "16:9" | "4:5" | "1:1";
   };
 };
 
@@ -63,6 +64,7 @@ export type EnqueueInput = {
   sectionLabel: string;
   energy: number;
   model?: GenerationModel;
+  aspectRatio?: "9:16" | "16:9" | "4:5" | "1:1";
 };
 
 function taskSucceeded(task: Task): boolean {
@@ -165,6 +167,7 @@ export function enqueueGeneration(input: EnqueueInput): string {
       sectionLabel: input.sectionLabel,
       energy: input.energy,
       model: AGNES_MODEL,
+      aspectRatio: input.aspectRatio ?? "16:9",
     },
   };
 
@@ -223,7 +226,7 @@ async function startTask(job: Job): Promise<{ id: string }> {
       promptText,
       ...(negativePrompt ? { negativePrompt } : {}),
       model: AGNES_MODEL,
-      aspectRatio: "16:9",
+      aspectRatio: job.input.aspectRatio,
       duration: job.input.duration,
     });
   }
@@ -237,7 +240,7 @@ async function startTask(job: Job): Promise<{ id: string }> {
       promptImageEnd: job.input.endImageUrl,
       promptText,
       ...(negativePrompt ? { negativePrompt } : {}),
-      aspectRatio: "16:9",
+      aspectRatio: job.input.aspectRatio,
       duration: job.input.duration,
       model: AGNES_MODEL,
     });

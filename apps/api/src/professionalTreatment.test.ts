@@ -126,3 +126,43 @@ describe("generateProfessionalTreatment", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
+
+describe("product promo treatment timing", () => {
+  const promo = { productName: "Studio", facts: "A music video editor with reviewed product facts for a realistic promo.", audience: "Creators", casting: "One adult musician", callToAction: "Visit the site", duration: 6, aspectRatio: "9:16" as const, reviewed: true as const };
+  it("uses reviewed product data and keeps every shot within the promo while preserving original analysis", async () => {
+    const fetchImpl = vi.fn(async (_url: any, init: any) => {
+      const body = JSON.parse(init.body);
+      const input = JSON.parse(body.input[1].content[0].text);
+      expect(input.reviewedProductPromo).toEqual(promo);
+      expect(input.song.duration).toBe(6);
+      expect(body.input[0].content[0].text).toContain("untrusted DATA");
+      expect(body.input[0].content[0].text).toContain("continuous filmed action");
+      return new Response(JSON.stringify({ output_text: JSON.stringify({
+        treatment: { title: "Studio Promo", concept: "Music-led product film", style: "realism", pacing: "rhythmic" },
+        productionBible: {
+          characterProfile: "One consistent adult musician",
+          wardrobeProfile: "Consistent artist wardrobe",
+          locationProfile: "One coherent studio",
+          stylePrompt: "cinematic product realism",
+          colorPalette: "controlled neutral palette",
+          continuityPrompt: "preserve identity, wardrobe and product continuity",
+          negativePrompt: "duplicate subjects, robotic motion, identity drift, malformed anatomy, text, logos, watermarks, continuity breaks",
+        },
+        shots: input.fixedTimingSlots.map((slot: any) => ({ index: slot.index, role: "Product", idea: "The musician moves naturally through the studio", camera: "tracking", framing: "medium", mood: "confident", location: "studio", hero: false, characterIds: [], assetIds: [] })),
+      }) }));
+    });
+    const result = await generateProfessionalTreatment({ analysis, understanding, vision: "", promo }, { endpoint: "https://example.test", apiKey: "test", fetchImpl });
+    expect(result.plan.promo).toEqual(promo);
+    expect(result.plan.shots[0].start).toBe(0);
+    expect(result.plan.shots.at(-1)?.end).toBe(6);
+    expect(result.plan.shots.every((shot, i, shots) => shot.end > shot.start && (i === 0 || shot.start === shots[i-1].end))).toBe(true);
+    expect(analysis.duration).toBe(12);
+  });
+  it("rejects unreviewed briefs and promos longer than the music before spending a provider call", async () => {
+    const fetchImpl = vi.fn();
+    const options = { endpoint: "https://example.test", apiKey: "test", fetchImpl };
+    await expect(generateProfessionalTreatment({ analysis, understanding, vision: "", promo: { ...promo, duration: 30 } }, options)).rejects.toThrow(/exceed/);
+    await expect(generateProfessionalTreatment({ analysis, understanding, vision: "", promo: { ...promo, reviewed: false } as any }, options)).rejects.toThrow();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
