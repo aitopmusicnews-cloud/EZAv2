@@ -100,6 +100,7 @@ export function regenerateDirectorVideo(shotId: string): string {
     sectionLabel: shot.sectionLabel,
     energy: shot.energy,
     model: AGNES_VIDEO_MODEL,
+    aspectRatio: plan.promo?.aspectRatio ?? "16:9",
   });
 }
 
