@@ -49,6 +49,8 @@ describe("prompt compiler", () => {
     expect(prompt.indexOf("[CHARACTER LOCK]")).toBeLessThan(prompt.indexOf("[VEHICLE LOCK]"));
     expect(prompt.indexOf("[VEHICLE LOCK]")).toBeLessThan(prompt.indexOf("[SCENE]"));
     expect(prompt.indexOf("[SCENE]")).toBeLessThan(prompt.indexOf("[STYLE]"));
+    expect(prompt).toContain("render each assigned character only once");
+    expect(prompt).toContain("Never clone or duplicate the same person");
   });
 
   it("embeds image negatives into an AVOID section because Agnes Image has no separate negative field", () => {
@@ -94,6 +96,10 @@ describe("prompt compiler", () => {
     expect(negative).toContain("woman in passenger seat");
     expect(negative).toContain("oncoming competitors");
     expect(negative.match(/duplicate protagonist/g)?.length).toBe(1);
+    expect(negative).toContain("duplicate character");
+    expect(negative).toContain("cloned person");
+    expect(negative).toContain("duplicate face");
+    expect(negative).toContain("extra copy of character");
   });
 
   it("adds no automatic spatial negatives when a scene explicitly uses an empty no-lock override", () => {

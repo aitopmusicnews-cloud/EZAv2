@@ -17,12 +17,13 @@ function shotContext(shot: DirectorShot, bible: ProductionBible, references: Ref
     return { ...ref, role: "slot" in lock ? "character" as const : lock.type, locked: true, name: lock.name };
   });
   const rules = [
-    "PER-SHOT LOCKS ARE AUTHORITATIVE and override all other text. References are separate identities/objects, never blend faces.",
+    "PER-SHOT LOCKS ARE AUTHORITATIVE and override all other text. References are separate identities/objects, never blend faces. Each assigned character is one unique person and must appear only once as a physical subject in the frame; never clone, duplicate, twin, or repeat the same identity.",
     characters.length ? `Only these ${characters.length} assigned characters may appear; no extra people: ${characters.map((lock) => `${lock.id} (${lock.name}): ${lock.notes ?? ""}`).join("; ")}.`
       : "No characters assigned. Show environment, objects or abstract coverage only; no people, faces, performers or crowds, even if other text mentions them.",
     ...selected.map((ref, index) => `Reference image ${index + 1}: ${ref.role} — ${ref.name}. Preserve this identity or asset exactly.`),
     ...assets.map((lock) => `Locked ${lock.type} ${lock.name}: ${lock.notes ?? "preserve its appearance; do not replace or redesign it"}.`),
     "Do not introduce any unassigned locked characters or assets.",
+    "No duplicate people, cloned bodies, repeated faces, twin copies, or extra versions of an assigned character in images or video. A reflection may reflect the same person only when the shot explicitly requires a reflection; it must not become a second physical person.",
     shot.continuityNotes ?? "",
   ].filter(Boolean).join("\n");
   const has = (type: string) => assets.some((lock) => lock.type === type);

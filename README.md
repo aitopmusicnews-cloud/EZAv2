@@ -15,6 +15,7 @@ The main guided workflow is **Song → Lyrics → Understanding → Treatment �
 - Review the Production Bible, up to 3 Character Locks, Asset Locks, and per-shot assignments.
 - Generate/approve storyboard images, then Agnes moving video takes.
 - Final Cut renders the MP4 with the original uploaded song, then exposes **Preview MP4** and **Download MP4**.
+- Professional Director output does **not** add titles, captions, lyrics, lower-thirds, subtitles, or other burned-in text.
 
 ### Music Video Promo
 
@@ -29,6 +30,8 @@ The Director automatically uses the approved Song Understanding, song timing, Di
 
 No product website, product name, product facts, audience field, or marketing CTA is required.
 
+**No on-screen text is automatically added.** Music Video Promo output should contain visuals + music only: no titles, captions, lyrics, lower-thirds, subtitles, slogans, or burned-in promo copy.
+
 ### Product Promo Video
 
 Open **Treatment → Create a Product Promo Video** for an app, service, website, business, or product.
@@ -37,7 +40,9 @@ This separate mode can use a website import, product name, reviewed facts/qualif
 
 ### Manual Promo Builder
 
-Open **Manual Promo Builder** or `/promo` for the hands-on social promo editor. It supports up to 10 image/video scenes, reordering, durations, image motion, crop/focal controls, UI-safe handling, reviewed on-screen text, music, Azure TTS voiceover, music ducking, and MP4 export.
+Open **Manual Promo Builder** or `/promo` for the hands-on social promo editor. It supports up to 10 image/video scenes, reordering, durations, image motion, crop/focal controls, UI-safe handling, music, Azure TTS voiceover, music ducking, and MP4 export.
+
+The Manual Promo Builder is the only place where on-screen text may be added intentionally by the user. It is never added automatically by the Professional Director.
 
 Production notes remain separate from voiceover and are not intentionally spoken.
 
@@ -48,6 +53,8 @@ The Advanced Editor exposes lower-level timeline controls for Text → Image, Te
 ### Character and Asset Locks
 
 The current Professional Director supports up to **3 Character Locks**, Asset Locks for vehicle/wardrobe/prop/location/product/style, per-shot lock assignment, Production Bible continuity, spatial-lock rules, and negative-prompt continuity controls.
+
+Each assigned Character Lock represents one unique person. Director image/video prompts explicitly prohibit cloned bodies, duplicate faces, twin copies, repeated performers, or extra copies of the same locked identity. Reflections are allowed only when the shot explicitly calls for one and must remain a reflection, not a second physical character.
 
 At least one active Character Lock with a valid reference image is currently required before Professional Director storyboard generation begins.
 

@@ -66,7 +66,7 @@ function compileCore(input: PromptCompileInput): string {
 
   const characterRefs = lockedRefs(input.referenceAssets, "character");
   const characterText = [
-    characterRefs.length ? "CHARACTER LOCK IS AUTHORITATIVE. Match the locked character reference image(s) exactly; treat them as identity references, not general inspiration. Preserve face, skin tone, hair, build, age appearance, and other identity markers. If any written character description conflicts with the locked reference image, the locked reference image wins." : "",
+    characterRefs.length ? "CHARACTER LOCK IS AUTHORITATIVE. Match the locked character reference image(s) exactly; treat them as identity references, not general inspiration. Preserve face, skin tone, hair, build, age appearance, and other identity markers. Each locked identity represents one unique person: render each assigned character only once as a physical subject unless the scene explicitly calls for a reflection. Never clone or duplicate the same person. If any written character description conflicts with the locked reference image, the locked reference image wins." : "",
     input.productionBible?.characterProfile ?? "",
   ].filter(Boolean).join(" ");
   if (characterText) sections.push(`[CHARACTER LOCK]\n${characterText}`);
@@ -135,9 +135,15 @@ function automaticNegativeTerms(lock?: SpatialLock | null): string[] {
 
 export function compileNegativePrompt(input: PromptCompileInput): string {
   const lock = input.spatialLock ?? input.productionBible?.defaultSpatialLock;
+  const characterRefs = lockedRefs(input.referenceAssets, "character");
+  const hasCharacterIdentity = characterRefs.length > 0 || Boolean(input.productionBible?.characterProfile?.trim());
+  const identityNegatives = hasCharacterIdentity
+    ? ["duplicate character", "cloned person", "duplicate face", "duplicate body", "twin copy of same person", "repeated identity", "extra copy of character"]
+    : [];
   const terms = [
     ...splitNegativeTerms(input.productionBible?.negativePrompt),
     ...splitNegativeTerms(input.negativePrompt),
+    ...identityNegatives,
     ...automaticNegativeTerms(lock),
   ];
   const seen = new Set<string>();
