@@ -4,6 +4,7 @@ import {
   AlignOfficialLyricsRequest,
   AudioAnalysis,
   DirectorPlan,
+  DirectorPromoBrief,
   ProductionBible,
   SongUnderstanding,
   SongUnderstandingRequest,
@@ -98,6 +99,7 @@ export async function directorPhaseARoutes(app: FastifyInstance, options: Direct
     directorRequest: z.string().max(4000).default(""),
     previousPlan: DirectorPlan.optional(),
     previousProductionBible: ProductionBible.optional(),
+    promo: DirectorPromoBrief.optional(),
   });
 
   app.post("/api/director/treatment", { config: { rateLimit: { max: 4, timeWindow: "1 minute" } } }, async (req, reply) => {
@@ -109,6 +111,9 @@ export async function directorPhaseARoutes(app: FastifyInstance, options: Direct
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues.map((issue) => issue.message).join("; ") });
     if (!parsed.data.understanding.approvedAt) {
       return reply.code(400).send({ error: "Approve Song Understanding before generating a treatment." });
+    }
+    if (parsed.data.promo && parsed.data.promo.duration > parsed.data.analysis.duration) {
+      return reply.code(400).send({ error: "Promo length cannot exceed the uploaded music. Choose a shorter length or upload a longer track." });
     }
     const generateTreatment = deps.generateTreatment ?? generateProfessionalTreatment;
     return reply.send(await generateTreatment(parsed.data));
