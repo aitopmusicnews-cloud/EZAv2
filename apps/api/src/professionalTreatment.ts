@@ -79,17 +79,22 @@ const TREATMENT_SCHEMA = {
 } as const;
 
 const SYSTEM_PROMPT = `You are BeatSync's professional music-video treatment director.
-Create a production-ready treatment and shot plan from the approved Song Understanding and fixed timing slots.
+Create a production-ready treatment and shot plan. The Artist / Director Vision is the creative starting point and the approved Song Understanding plus fixed timing are the grounding structure.
 
 Rules:
 - The timing slots are authoritative. Return exactly one creative shot description for every slot index and do not change timing.
 - Ground story claims in the supplied Song Understanding. Never invent lyric facts that are not present.
-- Use the artist/director vision when supplied, but preserve stated uncertainty instead of pretending certainty.
+- ARTIST / DIRECTOR VISION IS THE CREATIVE NORTH STAR. When it is supplied, start from it first and interpret the song, style, locations, performance, symbolism, and camera language through that vision. Do not replace a specific human vision with a generic music-video template.
+- If Artist / Director Vision is empty, still invent a distinctive high-concept visual world from the song rather than defaulting to generic performance coverage.
+- Avoid repeated default concepts such as generic neon city streets, empty warehouses, rooftops, basic club scenes, simple walk-and-perform coverage, or interchangeable performance montages unless the Artist / Director Vision or song specifically calls for them.
+- A strong new concept should have a clear visual thesis plus signature motifs, a specific world/location strategy, and a recognizable camera/production language.
 - If selectedVisualStyle is supplied, treat it as explicit production direction and carry it through the treatment, Production Bible, and shot choices.
 - directorRequest is a direct instruction from the human director. Follow it unless it conflicts with fixed timing or approved song facts.
-- When previousPlan is supplied, this is a revision. Preserve strong existing decisions that the director did not ask to change, while returning a complete revised treatment and full shot plan.
+- creativeMode controls how previousPlan is used.
+- If creativeMode is "revise" and previousPlan is supplied, preserve strong existing decisions the human did not ask to change while returning a complete revised treatment and full shot plan.
+- If creativeMode is "new", previousPlan is an ANTI-REFERENCE only. Do not revise or preserve its concept. Deliberately create a substantially different treatment while honoring the current Artist / Director Vision, Song Understanding, locks, and selected style. Change at least three major creative dimensions such as visual world/location, central metaphor, performance setup, narrative device, camera grammar, lighting/palette, or hero-shot concept. Do not reuse the previous title, core concept, shot pattern, or recurring staging simply because it existed before.
 - Assign characterIds (0–3) and assetIds for EVERY shot using ONLY active lock IDs from previousProductionBible. An empty characterIds means no people. Never put unassigned people or locked assets in the shot idea. Locked reference identities override generic character descriptions. Never blend different characters into one person.
-- Preserve previous per-shot assignments on revisions unless the director explicitly requests a cast or asset change.
+- Preserve previous per-shot assignments only when creativeMode is "revise", unless the director explicitly requests a cast or asset change. In creativeMode "new", keep the same active Character/Asset Locks available but freely reassign them to support the new concept.
 - Make each shot specific enough for image generation and image-to-video generation.
 - Casting is a Director decision: define a concrete character/cast profile before storyboard generation instead of relying on image-model defaults.
 - Follow any character identity, demographic traits, or appearance explicitly supplied by the Artist / Director Vision or reference images. Do not infer race or ethnicity from lyrics, genre, location, or music style.
@@ -195,6 +200,7 @@ export async function generateProfessionalTreatment(
     vision: string;
     stylePrompt?: string;
     directorRequest?: string;
+    creativeMode?: "new" | "revise";
     previousPlan?: DirectorPlanType;
     previousProductionBible?: ProductionBibleType;
     promo?: DirectorPromoBrief;
@@ -243,6 +249,7 @@ export async function generateProfessionalTreatment(
             type: "input_text",
             text: JSON.stringify({
               artistDirectorVision: input.vision,
+              creativeMode: input.creativeMode ?? "new",
               selectedVisualStyle: input.stylePrompt?.trim() || undefined,
               directorRequest: input.directorRequest?.trim() || undefined,
               previousPlan: input.previousPlan,

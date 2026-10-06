@@ -6,12 +6,15 @@ EZAv2 is an audio-aware music-video production app built around **BeatSync**, **
 
 ### Professional Music Video Director
 
-The main guided workflow is **Song → Lyrics → Understanding → Treatment → Plan → Images → Takes → Edit → Final**.
+The main guided workflow is **Vision + Song → Lyrics → Understanding → Treatment → Plan → Images → Takes → Edit → Final**.
 
 - Upload MP3, WAV, M4A, AAC, FLAC, OGG, or Opus.
 - Transcribe with Azure Whisper, paste/align official lyrics, or mark the track instrumental.
 - Approve Song Understanding before Professional Treatment.
-- Pick a Director style and use Director revision chat for creative changes.
+- **Artist / Director Vision is the creative starting point / north star.** Song Understanding, style, timing, and locks support that vision instead of replacing it with a generic music-video template.
+- Pick a Director style after setting the Vision.
+- **Create a Completely New Concept** starts fresh and uses the previous treatment only as an anti-reference so the Director deliberately changes the visual world, metaphor, staging, camera grammar, or other major creative dimensions.
+- **Send Edit & Revise** is the separate path for preserving the current concept while changing specific parts.
 - Review the Production Bible, up to 3 Character Locks, Asset Locks, and per-shot assignments.
 - Generate/approve storyboard images, then Agnes moving video takes.
 - Final Cut renders the MP4 with the original uploaded song, then exposes **Preview MP4** and **Download MP4**.
