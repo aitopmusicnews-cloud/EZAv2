@@ -895,7 +895,7 @@ function TreatmentStep({
         <div className="director-stage-card director-stage-approved">
           <strong>{plan.treatment.title}</strong>
           <p>{plan.treatment.concept}</p>
-          {plan.promo && <p><strong>Promo:</strong> {plan.promo.productName} · {plan.promo.duration}s · {plan.promo.aspectRatio}</p>
+          {plan.promo && <p><strong>Promo:</strong> {plan.promo.productName} · {plan.promo.duration}s · {plan.promo.aspectRatio}</p>}
           <p><strong>Style:</strong> {plan.treatment.style}</p>
           <p><strong>Pacing:</strong> {plan.treatment.pacing}</p>
         </div>
