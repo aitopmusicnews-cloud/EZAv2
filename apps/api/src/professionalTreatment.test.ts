@@ -76,8 +76,13 @@ describe("generateProfessionalTreatment", () => {
       const body = JSON.parse(String(init?.body)) as { model: string; input: Array<{ content: Array<{ text: string }> }> };
       expect(body.model).toBe("gpt-4.1-mini");
       const directorPayload = JSON.parse(body.input[1]!.content[0]!.text);
+      expect(directorPayload.artistDirectorVision).toBe("artist performance in a night city");
+      expect(directorPayload.creativeMode).toBe("new");
       expect(directorPayload.selectedVisualStyle).toContain("neo-noir");
       expect(directorPayload.directorRequest).toContain("more performance");
+      expect(body.input[0]!.content[0]!.text).toContain("CREATIVE NORTH STAR");
+      expect(body.input[0]!.content[0]!.text).toContain("ANTI-REFERENCE");
+      expect(body.input[0]!.content[0]!.text).toContain("generic neon city streets");
       expect(directorPayload.previousProductionBible.characterLocks[0].id).toBe("lead");
       return new Response(JSON.stringify({
         output: [{ content: [{ type: "output_text", text: JSON.stringify(generated) }] }],
@@ -91,6 +96,7 @@ describe("generateProfessionalTreatment", () => {
         vision: "artist performance in a night city",
         stylePrompt: "premium neo-noir with deep blacks and sculpted practical lighting",
         directorRequest: "make the second half more performance-driven",
+        creativeMode: "new",
         previousProductionBible: {
           characterLocks: [{ id: "lead", slot: 1, name: "Artist", referenceAssetId: "lead-image", locked: true }],
           assetLocks: [{ id: "car", type: "vehicle", name: "Red car", referenceAssetId: "car-image", locked: true }],
