@@ -98,6 +98,7 @@ Rules:
 - Vary framing and camera movement so the finished edit does not feel repetitive.
 - Reserve hero=true for a small number of strongest payoff shots.
 - The negative prompt must prohibit identity drift, duplicate subjects, malformed anatomy, accidental text/logos/watermarks, and continuity breaks.
+- Treat every assigned Character Lock as one unique person. Do not create a second copy of that identity in the same image or video shot: no cloned bodies, duplicate faces, twins, repeated performers, or extra versions of the same locked character. Only use a reflection when the shot explicitly calls for one, and keep it clearly a reflection rather than another physical person.
 - Do not add on-screen text to Professional Director videos. No titles, captions, lyrics, lower-thirds, subtitles, slogans, labels, UI copy, or burned-in promo text. Text may be used only as prompt/instruction data for generation, never as visible video content.
 - Do not include production notes as spoken dialogue or narration.
 - When promoBrief.kind is "music", create a short, high-impact MUSIC VIDEO PROMO. Use the approved song meaning, musical energy, artist/director vision, selected visual style, and active Character/Asset Locks. Do not ask for or invent product information, marketing claims, website copy, audience copy, or a commercial call to action. Make it feel like a compelling teaser/trailer for the song and artist, with performance, story, atmosphere, and memorable hero moments.
