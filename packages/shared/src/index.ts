@@ -157,17 +157,32 @@ export const DirectorTreatment = z.object({
 });
 export type DirectorTreatment = z.infer<typeof DirectorTreatment>;
 
-export const DirectorPromoBrief = z.object({
+const DirectorPromoFormat = {
+  duration: z.number().min(5).max(120),
+  aspectRatio: z.enum(["9:16", "16:9", "4:5", "1:1"]).default("9:16"),
+  reviewed: z.literal(true),
+};
+
+export const DirectorMusicPromoBrief = z.object({
+  kind: z.literal("music"),
+  ...DirectorPromoFormat,
+});
+export type DirectorMusicPromoBrief = z.infer<typeof DirectorMusicPromoBrief>;
+
+export const DirectorProductPromoBrief = z.object({
+  // Default keeps older saved product-promo projects compatible.
+  kind: z.literal("product").default("product"),
   sourceUrl: z.string().url().max(2048).optional(),
   productName: z.string().trim().min(1).max(300),
   facts: z.string().trim().min(30).max(20000),
   audience: z.string().trim().max(500).default(""),
   casting: z.string().trim().max(1000).default(""),
   callToAction: z.string().trim().min(1).max(500),
-  duration: z.number().min(5).max(120),
-  aspectRatio: z.enum(["9:16", "16:9", "4:5", "1:1"]).default("9:16"),
-  reviewed: z.literal(true),
+  ...DirectorPromoFormat,
 });
+export type DirectorProductPromoBrief = z.infer<typeof DirectorProductPromoBrief>;
+
+export const DirectorPromoBrief = z.union([DirectorMusicPromoBrief, DirectorProductPromoBrief]);
 export type DirectorPromoBrief = z.infer<typeof DirectorPromoBrief>;
 
 export const DirectorPlan = z.object({
