@@ -156,6 +156,7 @@ export async function renderDirectorFinal(
       projectId: `${projectId}-export-${crypto.randomUUID().slice(0, 8)}`,
       audioUrl: state.audioUrl,
       duration: plan.promo?.duration ?? state.analysis.duration,
+      aspectRatio: plan.promo?.aspectRatio ?? "16:9",
       clips,
       fades: false,
     },
