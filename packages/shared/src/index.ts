@@ -530,6 +530,7 @@ export const PromoWebsiteSource = z.object({
 });
 export type PromoWebsiteSource = z.infer<typeof PromoWebsiteSource>;
 export const PromoAdBrief = z.object({
+  creativeDirection: z.string().trim().max(2000).optional(),
   sourceUrl: z.string().url().max(2048).optional(),
   productName: z.string().trim().min(1).max(300),
   facts: z.string().trim().min(30).max(20000),
@@ -549,5 +550,33 @@ export const PromoAdDraft = z.object({
   reviewNotes: z.array(z.string().max(500)).max(10),
 });
 export type PromoAdDraft = z.infer<typeof PromoAdDraft>;
+
+export const WebsitePromoRequest = z.object({
+  draft: PromoAdDraft,
+  duration: z.union([z.literal(15), z.literal(30), z.literal(60)]),
+  aspectRatio: z.enum(["9:16", "16:9", "4:5", "1:1"]),
+  // Uploaded product shots stay exact. Generate only the remaining slots.
+  shots: z.array(z.object({
+    url: z.string().url().regex(/^https?:\/\//, "Use an HTTP or HTTPS media URL"), kind: z.enum(["image", "video"]),
+  })).max(10).default([]),
+  musicUrl: z.string().url().regex(/^https?:\/\//, "Use an HTTP or HTTPS media URL").optional(),
+  musicVolume: z.number().min(0).max(2).default(0.28),
+  voiceoverVolume: z.number().min(0).max(2).default(1),
+  duckMusic: z.boolean().default(true),
+}).refine((value) => value.shots.length <= value.draft.scenes.length, "There are more uploaded shots than planned scenes.")
+  .refine((value) => value.draft.voiceover.split(/\s+/).length <= Math.ceil(value.duration * 2.7), "The narration is too long for this runtime. Shorten it or choose a longer promo.");
+export type WebsitePromoRequest = z.infer<typeof WebsitePromoRequest>;
+export type WebsitePromoJob = {
+  id: string;
+  state: "running" | "failed" | "succeeded";
+  message: string;
+  request: WebsitePromoRequest;
+  scenes: { url: string; kind: "image" | "video"; duration: number }[];
+  voiceoverUrl?: string;
+  taskId?: string;
+  renderId?: string;
+  url?: string;
+  error?: string;
+};
 
 export * from "./productionLocks.js";

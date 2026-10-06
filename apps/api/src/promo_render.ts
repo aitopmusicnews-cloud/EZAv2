@@ -2,7 +2,7 @@ import { join, resolve } from "node:path";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { paths, storage } from "./storage.js";
 import { config } from "./config.js";
-import { runFfmpeg } from "./ffmpeg.js";
+import { runFfmpeg, probeDuration } from "./ffmpeg.js";
 import { assertSafeHost } from "./net.js";
 import { resolveLocalPath } from "./paths.js";
 
@@ -38,7 +38,16 @@ export type PromoRenderRequest = {
   musicVolume?: number;
   voiceoverVolume?: number;
   duckMusic?: boolean;
+  fitVoiceover?: boolean;
 };
+
+export function voiceTempoFilters(sourceDuration: number, targetDuration: number): string {
+  let rate = Math.max(1, sourceDuration / Math.max(0.5, targetDuration - 0.15));
+  const filters: string[] = [];
+  while (rate > 2) { filters.push("atempo=2"); rate /= 2; }
+  if (rate > 1) filters.push(`atempo=${rate.toFixed(6)}`);
+  return filters.length ? `${filters.join(",")},` : "";
+}
 
 function outputSize(aspectRatio: PromoRenderRequest["aspectRatio"]): { width: number; height: number } {
   // Render's free instance has a 512 MiB memory ceiling. A seven-scene
@@ -233,8 +242,11 @@ export async function renderPromo(req: PromoRenderRequest): Promise<{ url: strin
     const voiceInputIndex = req.voiceoverUrl
       ? 1 + (req.musicUrl ? 1 : 0)
       : null;
+    let voiceTempo = "";
     if (req.voiceoverUrl) {
-      inputs.push("-i", await resolveInput(req.voiceoverUrl));
+      const voiceInput = await resolveInput(req.voiceoverUrl);
+      inputs.push("-i", voiceInput);
+      if (req.fitVoiceover) voiceTempo = voiceTempoFilters(await probeDuration(voiceInput), req.duration);
     }
 
     let videoLabel = "promo";
@@ -267,7 +279,7 @@ export async function renderPromo(req: PromoRenderRequest): Promise<{ url: strin
     }
     if (voiceInputIndex !== null) {
       filters.push(
-        `[${voiceInputIndex}:a]volume=${voiceVolume.toFixed(3)},apad,` +
+        `[${voiceInputIndex}:a]${voiceTempo}volume=${voiceVolume.toFixed(3)},apad,` +
         `atrim=duration=${duration},asetpts=PTS-STARTPTS[voice]`,
       );
     }

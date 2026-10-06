@@ -393,3 +393,15 @@ export async function generateWebsiteAd(brief: import("@mvs/shared").PromoAdBrie
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(brief),
   }));
 }
+
+export async function produceWebsitePromo(request: import("@mvs/shared").WebsitePromoRequest): Promise<import("@mvs/shared").WebsitePromoJob> {
+  return jsonOrThrow(await fetch("/api/promo/produce", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+  }));
+}
+export async function getWebsitePromo(id: string): Promise<import("@mvs/shared").WebsitePromoJob> {
+  return jsonOrThrow(await fetch(`/api/promo/produce/${encodeURIComponent(id)}`));
+}
+export async function resumeWebsitePromo(id: string): Promise<import("@mvs/shared").WebsitePromoJob> {
+  return jsonOrThrow(await fetch(`/api/promo/produce/${encodeURIComponent(id)}/resume`, { method: "POST" }));
+}
