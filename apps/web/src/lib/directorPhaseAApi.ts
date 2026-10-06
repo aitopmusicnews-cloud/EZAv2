@@ -65,6 +65,7 @@ export async function requestProfessionalTreatment(req: {
   directorRequest?: string;
   previousPlan?: DirectorPlan;
   previousProductionBible?: ProductionBible;
+  promo?: import("@mvs/shared").DirectorPromoBrief;
 }): Promise<{ plan: DirectorPlan; productionBible: ProductionBible }> {
   return jsonOrThrow(await fetch("/api/director/treatment", {
     method: "POST",
