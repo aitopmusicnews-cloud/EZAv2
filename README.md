@@ -1,6 +1,6 @@
-# Music Video Studio — Agnes Video V2.0
+# EZAv2 — Professional Music Video Director
 
-This is the original Music Video Studio codebase, converted so **Agnes Video V2.0 is the only active AI video generator**.
+EZAv2 is an audio-aware music-video production app built around **BeatSync**, **Agnes Video V2.0**, local music analysis, Azure/OpenAI-assisted planning, and FFmpeg final rendering.
 
 ## Current modes
 
@@ -117,26 +117,6 @@ Install Python dependencies with:
 ```bash
 python3 -m pip install -r audio_analysis/requirements.txt
 ```
-
-## Local development
-
-Requirements:
-
-- Node.js 22+
-- pnpm 10.33.0
-- Python 3
-- ffmpeg
-
-```bash
-cp .env.example .env
-# set AGNES_API_KEY
-python3 -m pip install -r audio_analysis/requirements.txt
-pnpm install --frozen-lockfile
-pnpm dev
-```
-
-Web: `http://localhost:5173`
-API: `http://localhost:3001`
 
 ## Environment configuration
 
