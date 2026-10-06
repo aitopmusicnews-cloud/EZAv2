@@ -60,7 +60,7 @@ export function ProductionLocks() {
   </>;
   return <section className="production-locks" aria-label="Production locks">
     <h3>Character Locks</h3>
-    <p>Lock up to three people before building a treatment, or change them here and use Talk to Director to revise the casting. Review each shot’s assignments before generating. Reference images take priority over written descriptions.</p>
+    <p>Lock up to three people before building a treatment, or change them here and use Talk to Director to revise the casting. Review each shot’s assignments before generating. Reference images take priority over written descriptions. For multi-artist songs, name each Character Lock exactly like the Artist / Vocalist label used on the Lyrics screen so BeatSync can map separate verses to the correct performer.</p>
     <div className="lock-grid">
       {([1, 2, 3] as const).map((slot) => {
         const lock = bible.characterLocks!.find((item) => item.slot === slot);
