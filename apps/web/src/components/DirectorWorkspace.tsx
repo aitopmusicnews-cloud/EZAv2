@@ -628,8 +628,18 @@ function SongStep({
     <section className="director-panel director-song-step">
       <div className="director-section-heading">
         <span className="director-step-number">1</span>
-        <div><h2>Start with the real song</h2><p>BeatSync analyzes music structure first, then verifies lyrics before it is allowed to interpret the song.</p></div>
+        <div><h2>Start with your vision</h2><p>Set the creative direction first, then load the real song so BeatSync can ground your idea in the music and verified lyrics.</p></div>
       </div>
+
+      <label className="director-field director-vision-first">
+        <span>Artist / Director Vision <strong>CREATIVE NORTH STAR</strong></span>
+        <textarea
+          value={vision}
+          onChange={(event) => setVision(event.target.value)}
+          placeholder="Describe the world you want to see: story, mood, performance, locations, symbolism, camera ideas, things to avoid, and any signature moments."
+        />
+        <small>The Director starts here. Song Understanding, style, timing, and locks support your vision instead of replacing it with a generic music-video concept.</small>
+      </label>
 
       {!analysis ? (
         <label
@@ -648,16 +658,6 @@ function SongStep({
           <button type="button" className="btn ghost" onClick={onChangeSong}>Change Song</button>
         </div>
       )}
-
-      <label className="director-field">
-        <span>Artist / Director Vision <em>optional</em></span>
-        <textarea
-          value={vision}
-          onChange={(event) => setVision(event.target.value)}
-          placeholder="Example: glamorous but emotionally isolated, mostly performance with a small narrative thread, no cars."
-        />
-        <small>This helps interpretation, but BeatSync must still ground lyrical claims in approved lyrics.</small>
-      </label>
 
       {analysis && <button type="button" className="director-primary" onClick={onContinue}>Continue to Lyrics</button>}
     </section>
@@ -877,9 +877,12 @@ function TreatmentStep({
   busy,
   selectedStyleId,
   directorRequest,
+  vision,
+  onVisionChange,
   onStyleChange,
   onDirectorRequest,
-  onGenerate,
+  onGenerateNew,
+  onRevise,
   onReviewPlan,
   onBack,
 }: {
@@ -887,9 +890,12 @@ function TreatmentStep({
   busy: string | null;
   selectedStyleId: DirectorStyleId;
   directorRequest: string;
+  vision: string;
+  onVisionChange: (value: string) => void;
   onStyleChange: (styleId: DirectorStyleId) => void;
   onDirectorRequest: (value: string) => void;
-  onGenerate: () => void;
+  onGenerateNew: () => void;
+  onRevise: () => void;
   onReviewPlan: () => void;
   onBack: () => void;
 }) {
@@ -898,8 +904,18 @@ function TreatmentStep({
     <section className="director-panel">
       <div className="director-section-heading">
         <span className="director-step-number">4</span>
-        <div><h2>Professional Treatment</h2><p>Choose the visual language, then talk directly to the Director before or after the first treatment.</p></div>
+        <div><h2>Professional Treatment</h2><p>Your Vision comes first. Style and Song Understanding shape how the Director executes it.</p></div>
       </div>
+
+      <label className="director-field director-vision-first">
+        <span>Artist / Director Vision <strong>START HERE</strong></span>
+        <textarea
+          value={vision}
+          onChange={(event) => onVisionChange(event.target.value)}
+          placeholder="Example: One lonely performer inside a beautiful abandoned hotel. The building slowly comes alive with the beat. Elegant camera moves, surreal practical lighting, no generic street scenes."
+        />
+        <small>This is the creative north star. A new concept should begin here and deliberately avoid recycling the last treatment.</small>
+      </label>
 
       <DirectorStylePicker selectedStyleId={selectedStyleId} onSelect={onStyleChange} />
       <ProductionLocks />
@@ -915,7 +931,7 @@ function TreatmentStep({
       ) : (
         <div className="director-stage-card">
           <strong>Ready to build the treatment</strong>
-          <p>This uses the approved Song Understanding, your Director Vision, selected style, and fixed music timing.</p>
+          <p>The Director starts from your Vision, then uses approved Song Understanding, selected style, locks, and fixed music timing to make it production-ready.</p>
         </div>
       )}
 
@@ -924,8 +940,17 @@ function TreatmentStep({
         onChange={onDirectorRequest}
         busy={isBusy}
         hasPlan={Boolean(plan)}
-        onSend={onGenerate}
+        onSend={plan ? onRevise : onGenerateNew}
       />
+
+      {plan && (
+        <div className="director-action-row">
+          <button type="button" className="btn" disabled={isBusy} onClick={onGenerateNew}>
+            {isBusy ? "Director Working…" : "Create a Completely New Concept"}
+          </button>
+          <small>New Concept uses the current plan only as an anti-reference so the Director does not recycle the same video.</small>
+        </div>
+      )}
 
       <div className="director-action-row">
         <button type="button" className="btn ghost" onClick={onBack}>Back to Understanding</button>
