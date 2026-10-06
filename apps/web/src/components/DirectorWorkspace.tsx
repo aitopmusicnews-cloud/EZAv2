@@ -34,7 +34,7 @@ import "../styles/director.css";
 import "../styles/directorPhaseA.css";
 
 const STEPS: Array<{ label: string; stage: DirectorStage }> = [
-  { label: "1. Song", stage: "song" },
+  { label: "1. Vision + Song", stage: "song" },
   { label: "2. Lyrics", stage: "lyrics" },
   { label: "3. Understanding", stage: "understanding" },
   { label: "4. Treatment", stage: "treatment" },
@@ -49,7 +49,7 @@ const DIRECTOR_STYLES = [
   {
     id: "director-choice",
     label: "Director Choice",
-    description: "Let BeatSync choose the strongest look for the song.",
+    description: "Let BeatSync invent a distinctive production look from your Vision and the song.",
     prompt: "",
   },
   {
