@@ -157,12 +157,25 @@ export const DirectorTreatment = z.object({
 });
 export type DirectorTreatment = z.infer<typeof DirectorTreatment>;
 
+export const DirectorPromoBrief = z.object({
+  sourceUrl: z.string().url().max(2048).optional(),
+  productName: z.string().trim().min(1).max(300),
+  facts: z.string().trim().min(30).max(20000),
+  audience: z.string().trim().max(500).default(""),
+  casting: z.string().trim().max(1000).default(""),
+  callToAction: z.string().trim().min(1).max(500),
+  duration: z.number().min(5).max(120),
+  reviewed: z.literal(true),
+});
+export type DirectorPromoBrief = z.infer<typeof DirectorPromoBrief>;
+
 export const DirectorPlan = z.object({
   id: z.string().min(1),
   version: z.literal(1).default(1),
   planningBasis: z.enum(["legacy-audio-heuristic", "professional-treatment"]).default("legacy-audio-heuristic"),
   vision: z.string(),
   treatment: DirectorTreatment,
+  promo: DirectorPromoBrief.optional(),
   shots: z.array(DirectorShot).min(1),
   approvedAt: z.number().optional(),
 });
