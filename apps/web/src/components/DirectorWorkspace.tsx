@@ -447,7 +447,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
       <header className="director-header">
         <div>
           <div className="director-kicker">EZAv2 + BeatSync</div>
-          <h1>Professional Music Video Director</h1>
+          <h1>Creative Music Video Director V2</h1>
         </div>
         <button type="button" className="btn ghost" onClick={onOpenAdvanced}>Advanced Editor</button>
       </header>
