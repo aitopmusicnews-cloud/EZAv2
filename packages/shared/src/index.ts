@@ -151,6 +151,7 @@ export const DirectorShot = z.object({
   mood: z.string().min(1),
   location: z.string().min(1),
   energy: z.number().finite().min(0).max(1),
+  performerArtist: z.string().trim().min(1).max(200).optional(),
   characterIds: z.array(z.string()).max(3).optional(),
   assetIds: z.array(z.string()).optional(),
   continuityNotes: z.string().optional(),
