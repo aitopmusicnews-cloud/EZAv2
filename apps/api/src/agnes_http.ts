@@ -86,12 +86,13 @@ async function fetchAgnesWithRetry(
     if (!TRANSIENT_AGNES_STATUSES.has(response.status) || attempt === RETRY_DELAYS_MS.length) {
       return response;
     }
-    const retryAfter = Number(response.headers.get("retry-after"));
-    const delayMs = Number.isFinite(retryAfter) && retryAfter >= 0
-      ? Math.min(65_000, retryAfter * 1000)
-      : response.status === 429
-        ? 31_000
-        : RETRY_DELAYS_MS[attempt]!;
+    const header = response.headers.get("retry-after")?.trim();
+    const seconds = header ? Number(header) : NaN;
+    const date = header && !Number.isFinite(seconds) ? Date.parse(header) : NaN;
+    const requestedDelay = Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000
+      : Number.isFinite(date) ? Math.max(0, date - Date.now()) : 0;
+    const delayMs = Math.max(requestedDelay, response.status === 429 ? 61_000 : RETRY_DELAYS_MS[attempt]!);
+    await response.body?.cancel();
     await sleepImpl(delayMs);
   }
   throw new Error("unreachable");
@@ -204,6 +205,10 @@ export async function getAgnesResultOnce(
     throw new Error(`Could not read Agnes video generation status: ${message}`);
   }
 
+  if (TRANSIENT_AGNES_STATUSES.has(response.status)) {
+    await response.body?.cancel();
+    return { kind: "waiting", status: "in_progress" };
+  }
   const payload = await readJson(response, "status");
   const status = typeof payload.status === "string" ? payload.status.toLowerCase() : "";
 
