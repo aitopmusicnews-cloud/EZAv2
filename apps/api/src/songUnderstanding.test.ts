@@ -26,6 +26,7 @@ const validUnderstanding = {
   secondaryThemes: ["freedom"],
   emotionalArc: ["decision", "release"],
   sections: [{ start: 0, end: 12, sourceLabel: "section 1", inferredRole: "opening section", lyricalPurpose: "states the decision to leave", musicalPurpose: "builds energy", confidence: "medium" }],
+  vocalistSections: [],
   keyLyricMoments: [{ start: 1, end: 3, lyric: "I am leaving tonight", meaning: "a decisive break", visualOpportunity: "show the departure as a turning point", confidence: "high" }],
   repeatedHooks: [], characters: ["speaker"], narrativePerspective: "first person",
   literalImagery: ["leaving"], symbolicImagery: ["departure as freedom"], tensionRelease: ["decision into release"],
@@ -95,6 +96,23 @@ describe("generateSongUnderstanding", () => {
 
     expect(result.keyLyricMoments).toEqual([]);
     expect(result.uncertaintyNotes.at(-1)).toMatch(/omitted/i);
+  });
+
+  it("builds a grounded vocalist map from approved lyric segment labels", async () => {
+    const request = vocalRequest();
+    request.lyrics.rawText = "First artist line\nFeatured artist line";
+    request.lyrics.segments = [
+      { id: "a", start: 1, end: 4, text: "First artist line", artist: "Main Artist", source: "official-aligned" },
+      { id: "b", start: 5, end: 8, text: "Featured artist line", artist: "Featured Artist", source: "official-aligned" },
+    ];
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify({ ...validUnderstanding, keyLyricMoments: [] }) }] }],
+    }), { status: 200 }));
+
+    const result = await generateSongUnderstanding(request, { apiKey: "test", model: "gpt-5.6", fetchImpl: fetchImpl as typeof fetch });
+    expect(result.vocalistSections.map((section) => section.artist)).toEqual(["Main Artist", "Featured Artist"]);
+    expect(result.vocalistSections[0]).toMatchObject({ start: 1, end: 4, confidence: "high" });
+    expect(result.vocalistSections[1]).toMatchObject({ start: 5, end: 8, confidence: "high" });
   });
 
   it("uses Azure Responses endpoint and api-key auth when configured", async () => {
