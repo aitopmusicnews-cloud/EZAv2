@@ -11,3 +11,8 @@ Only assigned references enter storyboard generation. Assigned identities and as
 Changing locks or assignments clears affected approvals and media. Deleted or disabled locks are removed from assignments. Old in-flight storyboard results and cancelled video jobs cannot replace updated shots. Reference consistency is instructed through provider inputs; review generated images before approving the takes.
 
 Old character and vehicle reference IDs migrate to character slots and vehicle asset locks. Saved projects retain the library, per-shot assignments, and explicit empty selections. Legacy shots without assignment fields inherit their previous global references until edited.
+
+
+## Duplicate-character prevention
+
+Each assigned Character Lock represents one unique person. Storyboard image prompts and Agnes video-take prompts explicitly instruct the provider to render each locked identity only once as a physical subject. The compiled negative prompt also rejects duplicate characters, cloned people, duplicate faces/bodies, twin copies, repeated identities, and extra copies of the same character. Intentional reflections are allowed only when explicitly requested and must remain reflections rather than a second physical person.
