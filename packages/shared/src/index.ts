@@ -165,6 +165,7 @@ export const DirectorPromoBrief = z.object({
   casting: z.string().trim().max(1000).default(""),
   callToAction: z.string().trim().min(1).max(500),
   duration: z.number().min(5).max(120),
+  aspectRatio: z.enum(["9:16", "16:9", "4:5", "1:1"]).default("9:16"),
   reviewed: z.literal(true),
 });
 export type DirectorPromoBrief = z.infer<typeof DirectorPromoBrief>;
