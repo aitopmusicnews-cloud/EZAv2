@@ -1098,6 +1098,7 @@ function PlanStep({
         {plan.shots.map((shot, index) => (
           <div className="director-section-map-row" key={shot.id}>
             <strong>{index + 1}. {formatTime(shot.start)}–{formatTime(shot.end)} · {shot.role}{shot.hero ? " · HERO" : ""}</strong>
+            {shot.performerArtist && <span><strong>Vocalist:</strong> {shot.performerArtist}</span>}
             <p>{shot.idea}</p>
             <span>{shot.camera} · {shot.framing} · {shot.mood}</span>
             <ShotLockAssignments shot={shot} />
