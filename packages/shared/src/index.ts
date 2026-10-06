@@ -50,6 +50,7 @@ export const LyricSegment = z.object({
   start: z.number().finite().min(0),
   end: z.number().finite().min(0),
   text: z.string(),
+  artist: z.string().trim().min(1).max(200).optional(),
   confidence: z.number().min(0).max(1).optional(),
   source: z.enum(["transcription", "official-aligned", "manual"]),
 }).refine((value) => value.end >= value.start, {
@@ -97,12 +98,25 @@ export const SongUnderstandingSection = z.object({
 });
 export type SongUnderstandingSection = z.infer<typeof SongUnderstandingSection>;
 
+export const VocalistSection = z.object({
+  start: z.number().finite().min(0),
+  end: z.number().finite().min(0),
+  artist: z.string().trim().min(1).max(200),
+  role: z.string().trim().min(1).max(500),
+  confidence: z.enum(["high", "medium", "low"]),
+}).refine((value) => value.end >= value.start, {
+  message: "vocalist section end must be >= start",
+  path: ["end"],
+});
+export type VocalistSection = z.infer<typeof VocalistSection>;
+
 export const SongUnderstanding = z.object({
   basis: z.enum(["lyrics+music", "instrumental+vision"]),
   primaryTheme: z.string().min(1),
   secondaryThemes: z.array(z.string()),
   emotionalArc: z.array(z.string()).min(1),
   sections: z.array(SongUnderstandingSection),
+  vocalistSections: z.array(VocalistSection).default([]),
   keyLyricMoments: z.array(KeyLyricMoment),
   repeatedHooks: z.array(z.string()),
   characters: z.array(z.string()),
