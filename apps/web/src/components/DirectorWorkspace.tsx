@@ -125,6 +125,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
   const setDirectorStage = useStore((s) => s.setDirectorStage);
   const setLyricDocument = useStore((s) => s.setLyricDocument);
   const updateLyricSegment = useStore((s) => s.updateLyricSegment);
+  const updateLyricSegmentArtist = useStore((s) => s.updateLyricSegmentArtist);
   const approveLyrics = useStore((s) => s.approveLyrics);
   const markInstrumental = useStore((s) => s.markInstrumental);
   const setSongUnderstanding = useStore((s) => s.setSongUnderstanding);
@@ -446,7 +447,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
       <header className="director-header">
         <div>
           <div className="director-kicker">EZAv2 + BeatSync</div>
-          <h1>Professional Music Video Director</h1>
+          <h1>Creative Music Video Director V2</h1>
         </div>
         <button type="button" className="btn ghost" onClick={onOpenAdvanced}>Advanced Editor</button>
       </header>
@@ -496,6 +497,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
             busy={busy}
             onRetry={() => void retryTranscription()}
             onUpdateSegment={updateLyricSegment}
+            onUpdateArtist={updateLyricSegmentArtist}
             onAlign={() => void alignOfficial()}
             onApprove={approveCurrentLyrics}
             onInstrumental={markTrackInstrumental}
@@ -671,6 +673,7 @@ function LyricsStep({
   busy,
   onRetry,
   onUpdateSegment,
+  onUpdateArtist,
   onAlign,
   onApprove,
   onInstrumental,
@@ -683,6 +686,7 @@ function LyricsStep({
   busy: string | null;
   onRetry: () => void;
   onUpdateSegment: (id: string, text: string) => void;
+  onUpdateArtist: (id: string, artist: string) => void;
   onAlign: () => void;
   onApprove: () => void;
   onInstrumental: () => void;
@@ -716,8 +720,14 @@ function LyricsStep({
           {document!.segments.map((segment) => (
             <label className="director-lyric-row" key={segment.id}>
               <span>{formatTime(segment.start)}–{formatTime(segment.end)}</span>
+              <input
+                aria-label={`Artist / vocalist for ${formatTime(segment.start)}`}
+                value={segment.artist ?? ""}
+                onChange={(event) => onUpdateArtist(segment.id, event.target.value)}
+                placeholder="Artist / vocalist (ex: Main Artist or Featured Artist)"
+              />
               <textarea value={segment.text} onChange={(event) => onUpdateSegment(segment.id, event.target.value)} />
-              <small>{segment.source === "official-aligned" ? "official aligned" : segment.source}</small>
+              <small>{segment.source === "official-aligned" ? "official aligned" : segment.source}{segment.artist ? ` · ${segment.artist}` : " · vocalist not labeled"}</small>
             </label>
           ))}
         </div>
@@ -735,10 +745,11 @@ function LyricsStep({
             <textarea
               value={officialLyrics}
               onChange={(event) => setOfficialLyrics(event.target.value)}
-              placeholder="Paste the artist-approved lyrics here. Line breaks are preserved during alignment."
+              placeholder={"Paste artist-approved lyrics. Artist tags are recognized, e.g. [Verse 1: Main Artist], [Verse 2: Featured Artist], or Featured Artist: lyric line."}
             />
           </label>
           <button type="button" className="btn ghost" disabled={busy === "align"} onClick={onAlign}>Align Official Lyrics</button>
+          <small>For multi-artist songs, label each verse/section with the performer. You can also correct the Artist / Vocalist field on any timed segment before approval.</small>
         </div>
       )}
 
@@ -824,6 +835,16 @@ function UnderstandingStep({
               <span className="director-confidence">Confidence: {moment.confidence}</span>
             </div>
           )) : <p>No lyric-specific moments were claimed for this track.</p>}
+        </div>
+
+        <div className="director-understanding-block">
+          <h3>Artist / Vocalist Map</h3>
+          {understanding.vocalistSections.length ? understanding.vocalistSections.map((section, index) => (
+            <div className="director-section-map-row" key={`${section.start}-${section.artist}-${index}`}>
+              <strong>{formatTime(section.start)}–{formatTime(section.end)} · {section.artist}</strong>
+              <span>{section.role} · Confidence: {section.confidence}</span>
+            </div>
+          )) : <p>No vocalist labels were supplied. For featured verses, go back to Lyrics and label the Artist / Vocalist before approving.</p>}
         </div>
 
         <div className="director-understanding-block">
@@ -1077,6 +1098,7 @@ function PlanStep({
         {plan.shots.map((shot, index) => (
           <div className="director-section-map-row" key={shot.id}>
             <strong>{index + 1}. {formatTime(shot.start)}–{formatTime(shot.end)} · {shot.role}{shot.hero ? " · HERO" : ""}</strong>
+            {shot.performerArtist && <span><strong>Vocalist:</strong> {shot.performerArtist}</span>}
             <p>{shot.idea}</p>
             <span>{shot.camera} · {shot.framing} · {shot.mood}</span>
             <ShotLockAssignments shot={shot} />

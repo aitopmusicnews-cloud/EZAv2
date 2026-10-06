@@ -4,6 +4,45 @@ export type ProviderTimedWord = { text: string; start: number; end: number };
 export type ProviderTimedSegment = { text: string; start: number; end: number };
 
 type Token = { text: string; normalized: string };
+type OfficialLyricLine = { text: string; artist?: string };
+
+const SECTION_ONLY = /^(?:(?:verse|chorus|hook|bridge|intro|outro|refrain|interlude|pre[- ]?chorus|post[- ]?chorus)(?:\s+\d+)?|instrumental|break)$/i;
+
+function parseOfficialLyricLines(text: string): OfficialLyricLine[] {
+  const result: OfficialLyricLine[] = [];
+  let currentArtist: string | undefined;
+
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+
+    const bracket = line.match(/^\[([^\]]+)\]$/);
+    if (bracket) {
+      const header = bracket[1]!.trim();
+      const withArtist = header.match(/^[^:]+:\s*(.+)$/);
+      if (withArtist?.[1]?.trim()) currentArtist = withArtist[1].trim();
+      else if (!SECTION_ONLY.test(header)) currentArtist = header;
+      continue;
+    }
+
+    const headerOnly = line.match(/^([^:]{1,100}):$/);
+    if (headerOnly && !SECTION_ONLY.test(headerOnly[1]!.trim())) {
+      currentArtist = headerOnly[1]!.trim();
+      continue;
+    }
+
+    const inlineArtist = line.match(/^([^:]{1,100}):\s+(.+)$/);
+    if (inlineArtist && !SECTION_ONLY.test(inlineArtist[1]!.trim())) {
+      currentArtist = inlineArtist[1]!.trim();
+      result.push({ text: inlineArtist[2]!.trim(), artist: currentArtist });
+      continue;
+    }
+
+    result.push({ text: line, artist: currentArtist });
+  }
+
+  return result;
+}
 
 function tokenize(text: string): Token[] {
   const matches = text.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)?/gu) ?? [];
@@ -138,13 +177,13 @@ export function alignOfficialLyrics(draft: LyricDocument, officialText: string):
   if (!timedDraftWords.length) {
     throw new Error("Official lyrics need a timed transcription before automatic alignment.");
   }
-  const lines = officialText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = parseOfficialLyricLines(officialText);
   if (!lines.length) throw new Error("Official lyrics cannot be empty.");
 
-  const flatText = lines.join(" ");
+  const flatText = lines.map((line) => line.text).join(" ");
   const officialWords = timedWordsForText(flatText, timedDraftWords);
   let cursor = 0;
-  const lineWordCounts = lines.map((line) => tokenize(line).length);
+  const lineWordCounts = lines.map((line) => tokenize(line.text).length);
   const rawRanges = lines.map((line, index) => {
     const count = lineWordCounts[index]!;
     const lineWords = officialWords.slice(cursor, cursor + count);
@@ -182,11 +221,15 @@ export function alignOfficialLyrics(draft: LyricDocument, officialText: string):
     const nextStart = rawRanges[index + 1]?.start;
     const end = Math.max(start, nextStart != null && Number.isFinite(nextStart) ? Math.min(range.end, nextStart) : range.end);
     previousEnd = end;
+    const inheritedArtist = draft.segments
+      .filter((segment) => segment.artist && segment.start < end && segment.end > start)
+      .sort((a, b) => Math.min(b.end, end) - Math.max(b.start, start) - (Math.min(a.end, end) - Math.max(a.start, start)))[0]?.artist;
     return {
       id: `official-${index + 1}`,
       start,
       end,
-      text: line,
+      text: line.text,
+      artist: line.artist ?? inheritedArtist,
       confidence: 0.8,
       source: "official-aligned" as const,
     };
@@ -194,7 +237,7 @@ export function alignOfficialLyrics(draft: LyricDocument, officialText: string):
 
   return {
     source: "hybrid",
-    rawText: officialText.trim(),
+    rawText: lines.map((line) => line.text).join("\n"),
     draftText: draft.rawText,
     language: draft.language,
     words: officialWords,

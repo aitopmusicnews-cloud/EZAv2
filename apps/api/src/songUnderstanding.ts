@@ -9,6 +9,8 @@ Rules:
 - Key lyric moments must quote only lyric text supplied by the user and must use the supplied lyric timings.
 - Generic audio labels such as "section 1" are timing evidence, not proof that a region is a verse, chorus, bridge, or hook. If you infer a musical role, state it as inferred and set confidence honestly.
 - Musical analysis may support pacing, tension/release, dynamics, and performance intensity.
+- Lyric segment artist labels are authoritative performer metadata. Preserve separate artists/features instead of flattening every verse into one performer.
+- Populate vocalistSections from labeled lyric segments. Never guess a named artist from lyric content, genre, or timing when the lyric metadata does not identify the vocalist.
 - For instrumental mode, base interpretation on musical structure plus the user's stated vision and set basis to "instrumental+vision". Do not invent lyrics.
 - Be specific enough to guide a professional treatment while remaining faithful to the source material.`;
 
@@ -19,7 +21,7 @@ const SONG_UNDERSTANDING_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: [
-    "basis", "primaryTheme", "secondaryThemes", "emotionalArc", "sections", "keyLyricMoments",
+    "basis", "primaryTheme", "secondaryThemes", "emotionalArc", "sections", "vocalistSections", "keyLyricMoments",
     "repeatedHooks", "characters", "narrativePerspective", "literalImagery", "symbolicImagery",
     "tensionRelease", "performanceOpportunities", "visualMotifs", "uncertaintyNotes",
   ],
@@ -36,6 +38,17 @@ const SONG_UNDERSTANDING_JSON_SCHEMA = {
         properties: {
           start: { type: "number" }, end: { type: "number" }, sourceLabel: { type: "string" },
           inferredRole: { type: "string" }, lyricalPurpose: { type: "string" }, musicalPurpose: { type: "string" }, confidence: CONFIDENCE,
+        },
+      },
+    },
+    vocalistSections: {
+      type: "array",
+      items: {
+        type: "object", additionalProperties: false,
+        required: ["start", "end", "artist", "role", "confidence"],
+        properties: {
+          start: { type: "number" }, end: { type: "number" }, artist: { type: "string" },
+          role: { type: "string" }, confidence: CONFIDENCE,
         },
       },
     },
@@ -103,6 +116,34 @@ function normalizedText(value: string): string {
     .trim();
 }
 
+function groundedVocalistSections(request: SongUnderstandingRequest, sections: SongUnderstanding["sections"]): SongUnderstanding["vocalistSections"] {
+  const labeled = request.lyrics.segments
+    .filter((segment) => Boolean(segment.artist?.trim()) && segment.end >= segment.start)
+    .map((segment) => ({ start: segment.start, end: segment.end, artist: segment.artist!.trim() }))
+    .sort((a, b) => a.start - b.start);
+
+  const merged: Array<{ start: number; end: number; artist: string }> = [];
+  for (const item of labeled) {
+    const previous = merged.at(-1);
+    if (previous && normalizedText(previous.artist) === normalizedText(item.artist) && item.start - previous.end <= 1.5) {
+      previous.end = Math.max(previous.end, item.end);
+    } else {
+      merged.push({ ...item });
+    }
+  }
+
+  return merged.map((item) => {
+    const midpoint = (item.start + item.end) / 2;
+    const section = sections.find((candidate) => midpoint >= candidate.start && midpoint <= candidate.end)
+      ?? sections.find((candidate) => item.start < candidate.end && item.end > candidate.start);
+    return {
+      ...item,
+      role: section?.inferredRole ?? "vocal section",
+      confidence: "high" as const,
+    };
+  });
+}
+
 export async function generateSongUnderstanding(
   request: SongUnderstandingRequest,
   options: Options = {},
@@ -149,7 +190,11 @@ export async function generateSongUnderstanding(
   } catch {
     throw new Error("Song Understanding provider returned invalid JSON.");
   }
-  const result = SongUnderstanding.parse(parsedJson);
+  let result = SongUnderstanding.parse(parsedJson);
+  result = SongUnderstanding.parse({
+    ...result,
+    vocalistSections: groundedVocalistSections(request, result.sections),
+  });
   const expectedBasis = request.lyrics.source === "instrumental" ? "instrumental+vision" : "lyrics+music";
   if (result.basis !== expectedBasis) throw new Error(`Song Understanding basis mismatch: expected ${expectedBasis}.`);
 

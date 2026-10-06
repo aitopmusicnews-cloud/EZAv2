@@ -22,6 +22,8 @@ type Slot = {
   sectionRole: string;
   lyricalPurpose: string;
   musicalPurpose: string;
+  vocalistArtist?: string;
+  vocalistRole?: string;
   energy: number;
 };
 
@@ -78,7 +80,7 @@ const TREATMENT_SCHEMA = {
   },
 } as const;
 
-const SYSTEM_PROMPT = `You are BeatSync's professional music-video treatment director.
+const SYSTEM_PROMPT = `You are BeatSync's Creative Director V2: an auteur-level music-video director whose job is to create a distinctive visual identity for THIS song, not a reusable music-video template.
 Create a production-ready treatment and shot plan. The Artist / Director Vision is the creative starting point and the approved Song Understanding plus fixed timing are the grounding structure.
 
 Rules:
@@ -87,19 +89,21 @@ Rules:
 - ARTIST / DIRECTOR VISION IS THE CREATIVE NORTH STAR. When it is supplied, start from it first and interpret the song, style, locations, performance, symbolism, and camera language through that vision. Do not replace a specific human vision with a generic music-video template.
 - If Artist / Director Vision is empty, still invent a distinctive high-concept visual world from the song rather than defaulting to generic performance coverage.
 - Avoid repeated default concepts such as generic neon city streets, empty warehouses, rooftops, basic club scenes, simple walk-and-perform coverage, or interchangeable performance montages unless the Artist / Director Vision or song specifically calls for them.
-- A strong new concept should have a clear visual thesis plus signature motifs, a specific world/location strategy, and a recognizable camera/production language.
+- A strong new concept must have a clear visual thesis, 2–4 signature motifs that evolve across the video, a specific world/location strategy, and a recognizable camera/production language.\n- Before returning, mentally test: Could this exact treatment work for a different song with only the title changed? If yes, rethink it until the concept is song-specific.\n- Avoid generic filler/B-roll. Every shot must either advance the visual thesis, deepen a motif/story, reveal a performance idea, or create a deliberate musical payoff.\n- Do not repeat the same performance blocking, lens/framing pattern, location setup, or hero composition across multiple sections unless repetition is an intentional motif with visible evolution.
 - If selectedVisualStyle is supplied, treat it as explicit production direction and carry it through the treatment, Production Bible, and shot choices.
 - directorRequest is a direct instruction from the human director. Follow it unless it conflicts with fixed timing or approved song facts.
 - creativeMode controls how previousPlan is used.
 - If creativeMode is "revise" and previousPlan is supplied, preserve strong existing decisions the human did not ask to change while returning a complete revised treatment and full shot plan.
 - If creativeMode is "new", previousPlan is an ANTI-REFERENCE only. Do not revise or preserve its concept. Deliberately create a substantially different treatment while honoring the current Artist / Director Vision, Song Understanding, locks, and selected style. Change at least three major creative dimensions such as visual world/location, central metaphor, performance setup, narrative device, camera grammar, lighting/palette, or hero-shot concept. Do not reuse the previous title, core concept, shot pattern, or recurring staging simply because it existed before.
 - Assign characterIds (0–3) and assetIds for EVERY shot using ONLY active lock IDs from previousProductionBible. An empty characterIds means no people. Never put unassigned people or locked assets in the shot idea. Locked reference identities override generic character descriptions. Never blend different characters into one person.
+- MULTI-ARTIST SONGS: fixedTimingSlots may include vocalistArtist. That label is authoritative for who performs that timed section. When a Character Lock name matches the vocalist label, use that matching lock for artist-performance shots and do not substitute another locked artist. Do not put the lead artist into a featured artist's verse merely because Character 1 is the lead.
+- vocalistCharacterBindings lists reliable artist-label → Character Lock matches by lock name. Use those bindings as authoritative. If a vocalist has no matching Character Lock, do not pretend another locked identity is that artist; favor story/environment coverage until the user maps the correct lock.
 - Preserve previous per-shot assignments only when creativeMode is "revise", unless the director explicitly requests a cast or asset change. In creativeMode "new", keep the same active Character/Asset Locks available but freely reassign them to support the new concept.
 - Make each shot specific enough for image generation and image-to-video generation.
 - Casting is a Director decision: define a concrete character/cast profile before storyboard generation instead of relying on image-model defaults.
 - Follow any character identity, demographic traits, or appearance explicitly supplied by the Artist / Director Vision or reference images. Do not infer race or ethnicity from lyrics, genre, location, or music style.
 - When demographic traits are not supplied, do not default to one ethnicity or repeated demographic template. Keep casting direction project-specific and describe stable visual identity markers such as role, apparent age range, presentation, hair, build, wardrobe, and recurring features.
-- Maintain visual continuity across recurring characters, wardrobe, locations, props, palette, and lighting.
+- Maintain visual continuity across recurring characters, wardrobe, locations, props, palette, and lighting.\n- LOCKED PROP / ASSET CONTINUITY IS HARD CONTINUITY. If the same locked prop/vehicle/wardrobe/product/location appears in multiple shots, preserve its exact design and track its state, holder, placement, orientation, and location across adjacent shots. Do not teleport, recolor, redesign, duplicate, disappear, or transfer a recurring locked asset without an explicit story transition.\n- Crowd/background extras are NOT Character Locks. When a shot calls for a crowd, audience, dancers, partygoers, fans, or extras, keep every extra visually distinct from all locked characters and from other extras. Never copy the lead artist's face/body/wardrobe into the crowd.
 - Vary framing and camera movement so the finished edit does not feel repetitive.
 - Reserve hero=true for a small number of strongest payoff shots.
 - The negative prompt must prohibit identity drift, duplicate subjects, malformed anatomy, accidental text/logos/watermarks, and continuity breaks.
@@ -188,6 +192,8 @@ function slotsFor(analysis: AudioAnalysis, understanding: SongUnderstanding): Sl
       sectionRole: section?.inferredRole ?? "music-led section",
       lyricalPurpose: section?.lyricalPurpose ?? "No lyric-specific purpose supplied.",
       musicalPurpose: section?.musicalPurpose ?? "Follow the supplied music structure and energy.",
+      vocalistArtist: understanding.vocalistSections.find((item) => midpoint >= item.start && midpoint <= item.end)?.artist,
+      vocalistRole: understanding.vocalistSections.find((item) => midpoint >= item.start && midpoint <= item.end)?.role,
       energy: averageEnergy(analysis, start, end),
     };
   }).filter((slot) => slot.end > slot.start);
@@ -233,6 +239,13 @@ export async function generateProfessionalTreatment(
   } : input.analysis;
 
   const locks = normalizeProductionLocks(input.previousProductionBible ?? {});
+  const normalizedArtist = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const vocalistCharacterBindings = input.understanding.vocalistSections.map((section) => ({
+    artist: section.artist,
+    characterIds: locks.characterLocks!
+      .filter((lock) => lock.locked && normalizedArtist(lock.name) === normalizedArtist(section.artist))
+      .map((lock) => lock.id),
+  }));
   const slots = slotsFor(timingAnalysis, input.understanding);
   if (!slots.length) throw new Error("Could not create treatment timing slots from this song.");
 
@@ -257,6 +270,7 @@ export async function generateProfessionalTreatment(
               promoBrief: promo,
               song: { duration: timingAnalysis.duration, bpm: input.analysis.bpm, key: input.analysis.key },
               understanding: input.understanding,
+              vocalistCharacterBindings,
               fixedTimingSlots: slots,
             }),
           }],
@@ -318,6 +332,7 @@ export async function generateProfessionalTreatment(
         mood: creative.mood,
         location: creative.location,
         energy: slot.energy,
+        performerArtist: slot.vocalistArtist,
         hero: creative.hero,
         ...normalizeShotLocks({ characterIds: creative.characterIds ?? [], assetIds: creative.assetIds ?? [] }, locks),
         imageStatus: "idle",
@@ -326,7 +341,16 @@ export async function generateProfessionalTreatment(
       };
     }),
   });
-  const productionBible = ProductionBible.parse({ ...generated.productionBible, characterLocks: locks.characterLocks, assetLocks: locks.assetLocks });
+  const activeAssets = locks.assetLocks!.filter((lock) => lock.locked);
+  const lockedAssetContinuity = activeAssets.length
+    ? `Locked asset continuity: ${activeAssets.map((lock) => `${lock.name} (${lock.type})${lock.notes ? `: ${lock.notes}` : ""}`).join("; ")}. Preserve exact design and physical state whenever assigned; no unexplained changes, duplicates, disappearances, or teleporting.`
+    : "";
+  const productionBible = ProductionBible.parse({
+    ...generated.productionBible,
+    continuityPrompt: [generated.productionBible.continuityPrompt, lockedAssetContinuity].filter(Boolean).join(" "),
+    characterLocks: locks.characterLocks,
+    assetLocks: locks.assetLocks,
+  });
   if (!productionBible.negativePrompt?.trim()) throw new Error("Professional Treatment must include a negative prompt.");
   return { plan, productionBible };
 }

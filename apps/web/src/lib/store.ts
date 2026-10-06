@@ -169,6 +169,7 @@ type State = {
 
   setLyricDocument: (document: LyricDocument | null) => void;
   updateLyricSegment: (id: string, text: string) => void;
+  updateLyricSegmentArtist: (id: string, artist: string) => void;
   approveLyrics: () => void;
   markInstrumental: () => void;
   setSongUnderstanding: (understanding: SongUnderstanding | null) => void;
@@ -422,6 +423,26 @@ export const useStore = create<State>()(
           };
           return {
             lyricDocument,
+            songUnderstanding: null,
+            directorPlan: invalidateDirectorPlan(state.directorPlan),
+            directorFinalUrl: null,
+            directorStage: "lyrics" as const,
+          };
+        }),
+      updateLyricSegmentArtist: (id, artist) =>
+        set((state) => {
+          if (!state.lyricDocument) return state;
+          const normalizedArtist = artist.trim() || undefined;
+          const segments = state.lyricDocument.segments.map((segment) => segment.id === id
+            ? { ...segment, artist: normalizedArtist, source: "manual" as const }
+            : segment);
+          return {
+            lyricDocument: {
+              ...state.lyricDocument,
+              segments,
+              correctedAt: Date.now(),
+              approvedAt: undefined,
+            },
             songUnderstanding: null,
             directorPlan: invalidateDirectorPlan(state.directorPlan),
             directorFinalUrl: null,

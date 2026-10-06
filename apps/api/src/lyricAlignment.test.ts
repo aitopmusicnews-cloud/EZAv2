@@ -53,4 +53,25 @@ describe("official lyrics alignment", () => {
     expect(aligned.segments[1]!.start).toBeGreaterThanOrEqual(aligned.segments[0]!.end);
     expect(aligned.segments[1]!.end).toBeLessThanOrEqual(aligned.segments[2]!.start);
   });
+
+  it("recognizes separate artists from official lyric section tags", () => {
+    const aligned = alignOfficialLyrics(
+      draft,
+      "[Verse 1: Main Artist]\nfirst known line\n[Verse 2: Featured Artist]\nlast known line",
+    );
+    expect(aligned.segments.map((segment) => segment.artist)).toEqual(["Main Artist", "Featured Artist"]);
+    expect(aligned.rawText).toBe("first known line\nlast known line");
+  });
+
+  it("inherits manually labeled vocalist timing when official lyrics omit artist tags", () => {
+    const labeledDraft: LyricDocument = {
+      ...draft,
+      segments: [
+        { ...draft.segments[0]!, artist: "Main Artist" },
+        { ...draft.segments[1]!, artist: "Featured Artist" },
+      ],
+    };
+    const aligned = alignOfficialLyrics(labeledDraft, "first known line\nlast known line");
+    expect(aligned.segments.map((segment) => segment.artist)).toEqual(["Main Artist", "Featured Artist"]);
+  });
 });
