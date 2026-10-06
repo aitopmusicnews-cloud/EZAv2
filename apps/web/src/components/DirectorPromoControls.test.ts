@@ -8,7 +8,7 @@ vi.mock("../lib/api.js", () => ({ importPromoWebsite: vi.fn() }));
 let root: Root;
 let host: HTMLDivElement;
 afterEach(async () => { if (root) await act(async () => root.unmount()); host?.remove(); vi.clearAllMocks(); });
-const saved = { sourceUrl: "https://example.com/product", productName: "Studio", facts: "Create music videos with generated footage edited to your own uploaded track.", audience: "Artists", casting: "One musician", callToAction: "Visit Studio", duration: 30, reviewed: true as const };
+const saved = { sourceUrl: "https://example.com/product", productName: "Studio", facts: "Create music videos with generated footage edited to your own uploaded track.", audience: "Artists", casting: "One musician", callToAction: "Visit Studio", duration: 30, aspectRatio: "9:16" as const, reviewed: true as const };
 async function mount(songDuration = 90) {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   const onGenerate = vi.fn();
