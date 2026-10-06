@@ -26,6 +26,7 @@ const understanding = {
     musicalPurpose: "Build momentum and resolve.",
     confidence: "high" as const,
   }],
+  vocalistSections: [],
   keyLyricMoments: [],
   repeatedHooks: [],
   characters: [],
@@ -121,6 +122,66 @@ describe("generateProfessionalTreatment", () => {
     expect(result.productionBible.characterProfile).toContain("consistent lead performer");
     expect(result.productionBible.negativePrompt).toContain("identity drift");
     expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("carries separate vocalist verses into timing slots and Character Lock bindings", async () => {
+    const multiArtistUnderstanding = {
+      ...understanding,
+      basis: "lyrics+music" as const,
+      vocalistSections: [
+        { start: 0, end: 6, artist: "Main Artist", role: "verse 1", confidence: "high" as const },
+        { start: 6, end: 12, artist: "Featured Artist", role: "verse 2", confidence: "high" as const },
+      ],
+    };
+    const fetchImpl = vi.fn(async (_url: any, init: any) => {
+      const body = JSON.parse(init.body);
+      const input = JSON.parse(body.input[1].content[0].text);
+      expect(input.vocalistCharacterBindings).toEqual([
+        { artist: "Main Artist", characterIds: ["main"] },
+        { artist: "Featured Artist", characterIds: ["feature"] },
+      ]);
+      expect(input.fixedTimingSlots.some((slot: any) => slot.vocalistArtist === "Main Artist")).toBe(true);
+      expect(input.fixedTimingSlots.some((slot: any) => slot.vocalistArtist === "Featured Artist")).toBe(true);
+      expect(body.input[0].content[0].text).toContain("MULTI-ARTIST SONGS");
+      return new Response(JSON.stringify({ output_text: JSON.stringify({
+        treatment: { title: "Two Voices", concept: "Distinct performance worlds", style: "cinematic", pacing: "dynamic" },
+        productionBible: {
+          characterProfile: "Two distinct artists",
+          wardrobeProfile: "Separate consistent looks",
+          locationProfile: "Two connected visual worlds",
+          stylePrompt: "cinematic",
+          colorPalette: "controlled contrast",
+          continuityPrompt: "preserve both artist identities",
+          negativePrompt: "identity drift, duplicate subjects",
+        },
+        shots: input.fixedTimingSlots.map((slot: any) => ({
+          index: slot.index,
+          role: "Performance",
+          idea: `${slot.vocalistArtist ?? "Artist"} performs their own section`,
+          camera: "tracking",
+          framing: "medium",
+          mood: "confident",
+          location: "performance world",
+          hero: false,
+          characterIds: slot.vocalistArtist === "Featured Artist" ? ["feature"] : ["main"],
+          assetIds: [],
+        })),
+      }) }));
+    });
+    const result = await generateProfessionalTreatment({
+      analysis,
+      understanding: multiArtistUnderstanding,
+      vision: "two artists with distinct performance identities",
+      previousProductionBible: {
+        characterLocks: [
+          { id: "main", slot: 1, name: "Main Artist", referenceAssetId: "main-image", locked: true },
+          { id: "feature", slot: 2, name: "Featured Artist", referenceAssetId: "feature-image", locked: true },
+        ],
+        assetLocks: [],
+      },
+    }, { endpoint: "https://example.test", apiKey: "test", fetchImpl });
+    expect(result.plan.shots.some((shot) => shot.performerArtist === "Main Artist")).toBe(true);
+    expect(result.plan.shots.some((shot) => shot.performerArtist === "Featured Artist")).toBe(true);
   });
 
   it("refuses to plan from unapproved Song Understanding", async () => {
