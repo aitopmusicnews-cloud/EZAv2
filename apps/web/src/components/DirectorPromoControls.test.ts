@@ -15,12 +15,12 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 
-async function mount(songDuration = 90) {
+async function mount(songDuration = 90, saved?: import("@mvs/shared").DirectorPromoBrief) {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
   const onGenerate = vi.fn();
-  await act(async () => root.render(createElement(DirectorPromoControls, { songDuration, busy: false, onGenerate })));
+  await act(async () => root.render(createElement(DirectorPromoControls, { songDuration, saved, busy: false, onGenerate })));
   return onGenerate;
 }
 
@@ -46,25 +46,22 @@ describe("Director promo controls", () => {
   });
 
   it("keeps product marketing fields in the separate product promo flow", async () => {
-    vi.mocked(importPromoWebsite).mockResolvedValue({
+    const savedProduct = {
+      kind: "product" as const,
       sourceUrl: "https://example.com/product",
-      title: "Studio",
-      content: "Create music videos with generated footage edited to your own uploaded track.",
-      description: "",
-      fetchedAt: new Date().toISOString(),
-      truncated: false,
-    });
-    const generate = await mount();
-    const url = host.querySelector('input[type="url"]') as HTMLInputElement;
-    await act(async () => {
-      url.value = "https://example.com/product";
-      url.dispatchEvent(new Event("input", { bubbles: true }));
-      url.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    await click(button("Import product website"));
+      productName: "Studio",
+      facts: "Create music videos with generated footage edited to your own uploaded track.",
+      audience: "Artists",
+      casting: "One musician",
+      callToAction: "Visit Studio",
+      duration: 30,
+      aspectRatio: "9:16" as const,
+      reviewed: true as const,
+    };
+    const generate = await mount(90, savedProduct);
     const productDetails = Array.from(host.querySelectorAll("details")).find((el) => el.textContent?.includes("Product Promo"))!;
     await click(productDetails.querySelector('input[type="checkbox"]')!);
-    await click(button("Build Product Promo Plan"));
+    await click(button("Rebuild Product Promo Plan"));
     expect(generate).toHaveBeenCalledWith(expect.objectContaining({
       kind: "product",
       productName: "Studio",
