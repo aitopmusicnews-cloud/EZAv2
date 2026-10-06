@@ -261,28 +261,33 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
 
   const reanalyzeMeaning = () => void analyzeMeaning();
 
-  const buildProfessionalTreatment = async (promo?: DirectorPromoBrief) => {
+  const buildProfessionalTreatment = async (
+    promo?: DirectorPromoBrief,
+    creativeMode: "new" | "revise" = "new",
+  ) => {
     if (!analysis || !songUnderstanding?.approvedAt) {
       setError("Approve Song Understanding before generating the professional treatment.");
       return;
     }
-    const sameModeRevision = Boolean(
+    const sameModePlan = Boolean(
       directorPlan &&
       (directorPlan.promo?.kind ?? "full") === (promo?.kind ?? "full"),
     );
-    const revising = sameModeRevision;
+    const revising = creativeMode === "revise" && sameModePlan;
     const request = directorRequest.trim() || (revising && selectedStyle.prompt
-      ? "Apply the selected visual style to the current treatment and shot plan while preserving all other strong creative decisions."
-      : "");
+      ? "Refine the current concept using the selected visual style while preserving only the decisions I did not ask to change."
+      : creativeMode === "new" && sameModePlan
+        ? "Create a substantially different concept from the previous plan. Start from my Artist / Director Vision and do not recycle the old concept, locations, staging, camera pattern, or hero moments."
+        : "");
     setBusy(revising ? "revision" : "treatment");
     clearMessages();
-    setStatus(promo?.kind === "music"
-      ? "Building a music video promo treatment and shot plan from the song and Director settings…"
-      : promo?.kind === "product"
-        ? "Building a product promo treatment and shot plan…"
-        : revising
-        ? "Director is revising the treatment and shot plan…"
-        : "Building a production-ready treatment and shot plan with Azure…");
+    setStatus(revising
+      ? "Director is revising the current treatment and shot plan…"
+      : promo?.kind === "music"
+        ? "Creating a fresh music video promo concept from your Vision first…"
+        : promo?.kind === "product"
+          ? "Creating a fresh product promo concept from your Vision and reviewed product facts…"
+          : "Creating a fresh music video concept from your Artist / Director Vision…");
     try {
       const result = await requestProfessionalTreatment({
         analysis,
@@ -290,20 +295,21 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
         vision: directorVision,
         stylePrompt: selectedStyle.prompt,
         directorRequest: request,
-        previousPlan: sameModeRevision ? directorPlan ?? undefined : undefined,
+        creativeMode,
+        previousPlan: sameModePlan ? directorPlan ?? undefined : undefined,
         previousProductionBible: productionBible ?? undefined,
         promo,
       });
       if (useStore.getState().songId !== songId) return;
       applyProfessionalDirectorPlan(result.plan, result.productionBible);
       setDirectorRequest("");
-      setStatus(promo?.kind === "music"
-        ? "Music video promo plan is ready. Review the moving-shot plan before generating images."
-        : promo?.kind === "product"
-          ? "Product promo plan is ready. Review the moving-shot plan before generating images."
-          : revising
-          ? "Director revision applied. Review the updated shot plan."
-          : "Professional treatment and shot plan are ready. Review the plan before generating images.");
+      setStatus(revising
+        ? "Director revision applied. Review the updated shot plan."
+        : promo?.kind === "music"
+          ? "Fresh Music Video Promo concept is ready. Review the new moving-shot plan."
+          : promo?.kind === "product"
+            ? "Fresh Product Promo concept is ready. Review the new moving-shot plan."
+            : "Fresh professional music video concept is ready. Review the new shot plan.");
     } catch (err) {
       setStatus(null);
       setError(`Professional Treatment failed: ${getErrorMessage(err)}`);
@@ -517,7 +523,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
               songDuration={analysis?.duration ?? 0}
               saved={directorPlan?.promo}
               busy={!!busy}
-              onGenerate={(brief) => void buildProfessionalTreatment(brief)}
+              onGenerate={(brief) => void buildProfessionalTreatment(brief, "new")}
             />
             <TreatmentStep
               plan={directorPlan}
@@ -526,7 +532,10 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
               directorRequest={directorRequest}
               onStyleChange={(styleId) => setSelectedStyleId(styleId)}
               onDirectorRequest={setDirectorRequest}
-              onGenerate={() => void buildProfessionalTreatment()}
+              vision={directorVision}
+              onVisionChange={setDirectorVision}
+              onGenerateNew={() => void buildProfessionalTreatment(directorPlan?.promo, "new")}
+              onRevise={() => void buildProfessionalTreatment(directorPlan?.promo, "revise")}
               onReviewPlan={() => setDirectorStage("plan")}
               onBack={() => setDirectorStage("understanding")}
             />
@@ -542,7 +551,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
             busy={busy}
             onCharacterProfile={(value) => updateDirectorBible({ characterProfile: value })}
             onDirectorRequest={setDirectorRequest}
-            onRevise={() => void buildProfessionalTreatment()}
+            onRevise={() => void buildProfessionalTreatment(directorPlan.promo, "revise")}
             onApprove={approvePlanAndContinue}
             onBack={() => setDirectorStage("treatment")}
           />
