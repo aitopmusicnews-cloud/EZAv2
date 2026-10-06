@@ -7,11 +7,13 @@ import {
   type AudioAnalysis,
   type Clip,
   type DirectorPlan,
+  type DirectorPromoBrief,
   type DirectorStage,
   type LyricDocument,
   type ProductionBible,
   type SongUnderstanding,
 } from "@mvs/shared";
+import { DirectorPromoControls } from "./DirectorPromoControls.js";
 import { uploadSong } from "../lib/api.js";
 import {
   alignOfficialLyricsApi,
@@ -259,18 +261,26 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
 
   const reanalyzeMeaning = () => void analyzeMeaning();
 
-  const buildProfessionalTreatment = async () => {
+  const buildProfessionalTreatment = async (promo?: DirectorPromoBrief) => {
     if (!analysis || !songUnderstanding?.approvedAt) {
       setError("Approve Song Understanding before generating the professional treatment.");
       return;
     }
-    const revising = Boolean(directorPlan);
+    const sameModeRevision = Boolean(
+      directorPlan &&
+      Boolean(directorPlan.promo) === Boolean(promo),
+    );
+    const revising = sameModeRevision;
     const request = directorRequest.trim() || (revising && selectedStyle.prompt
       ? "Apply the selected visual style to the current treatment and shot plan while preserving all other strong creative decisions."
       : "");
     setBusy(revising ? "revision" : "treatment");
     clearMessages();
-    setStatus(revising ? "Director is revising the treatment and shot plan…" : "Building a production-ready treatment and shot plan with Azure…");
+    setStatus(promo
+      ? "Building a generated promo music video treatment and shot plan…"
+      : revising
+        ? "Director is revising the treatment and shot plan…"
+        : "Building a production-ready treatment and shot plan with Azure…");
     try {
       const result = await requestProfessionalTreatment({
         analysis,
@@ -278,14 +288,18 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
         vision: directorVision,
         stylePrompt: selectedStyle.prompt,
         directorRequest: request,
-        previousPlan: directorPlan ?? undefined,
+        previousPlan: sameModeRevision ? directorPlan ?? undefined : undefined,
         previousProductionBible: productionBible ?? undefined,
+        promo,
       });
+      if (useStore.getState().songId !== songId) return;
       applyProfessionalDirectorPlan(result.plan, result.productionBible);
       setDirectorRequest("");
-      setStatus(revising
-        ? "Director revision applied. Review the updated shot plan."
-        : "Professional treatment and shot plan are ready. Review the plan before generating images.");
+      setStatus(promo
+        ? "Promo music video plan is ready. Review the moving-shot plan before generating images."
+        : revising
+          ? "Director revision applied. Review the updated shot plan."
+          : "Professional treatment and shot plan are ready. Review the plan before generating images.");
     } catch (err) {
       setStatus(null);
       setError(`Professional Treatment failed: ${getErrorMessage(err)}`);
@@ -493,17 +507,26 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
         )}
 
         {effectiveStage === "treatment" && (
-          <TreatmentStep
-            plan={directorPlan}
-            busy={busy}
-            selectedStyleId={selectedStyleId}
-            directorRequest={directorRequest}
-            onStyleChange={(styleId) => setSelectedStyleId(styleId)}
-            onDirectorRequest={setDirectorRequest}
-            onGenerate={() => void buildProfessionalTreatment()}
-            onReviewPlan={() => setDirectorStage("plan")}
-            onBack={() => setDirectorStage("understanding")}
-          />
+          <>
+            <DirectorPromoControls
+              key={songId}
+              songDuration={analysis?.duration ?? 0}
+              saved={directorPlan?.promo}
+              busy={!!busy}
+              onGenerate={(brief) => void buildProfessionalTreatment(brief)}
+            />
+            <TreatmentStep
+              plan={directorPlan}
+              busy={busy}
+              selectedStyleId={selectedStyleId}
+              directorRequest={directorRequest}
+              onStyleChange={(styleId) => setSelectedStyleId(styleId)}
+              onDirectorRequest={setDirectorRequest}
+              onGenerate={() => void buildProfessionalTreatment()}
+              onReviewPlan={() => setDirectorStage("plan")}
+              onBack={() => setDirectorStage("understanding")}
+            />
+          </>
         )}
 
         {effectiveStage === "plan" && directorPlan && (
@@ -544,6 +567,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
 
         {effectiveStage === "edit" && directorPlan?.approvedAt && (
           <EditStep
+            promo={directorPlan.promo}
             busy={busy}
             onRender={() => void renderFinalVideo()}
             onBack={() => setDirectorStage("takes")}
@@ -553,6 +577,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
         {effectiveStage === "final" && directorFinalUrl && (
           <FinalStep
             url={directorFinalUrl}
+            promo={directorPlan?.promo}
             onBack={() => setDirectorStage("edit")}
           />
         )}
@@ -870,6 +895,7 @@ function TreatmentStep({
         <div className="director-stage-card director-stage-approved">
           <strong>{plan.treatment.title}</strong>
           <p>{plan.treatment.concept}</p>
+          {plan.promo && <p><strong>Promo:</strong> {plan.promo.productName} · {plan.promo.duration}s · {plan.promo.aspectRatio}</p>
           <p><strong>Style:</strong> {plan.treatment.style}</p>
           <p><strong>Pacing:</strong> {plan.treatment.pacing}</p>
         </div>
@@ -1114,10 +1140,12 @@ function TakesStep({
 }
 
 function EditStep({
+  promo,
   busy,
   onRender,
   onBack,
 }: {
+  promo?: DirectorPromoBrief;
   busy: string | null;
   onRender: () => void;
   onBack: () => void;
@@ -1129,7 +1157,7 @@ function EditStep({
         <div><h2>Final Edit</h2><p>Combine the approved video takes with the original uploaded song as the final soundtrack.</p></div>
       </div>
       <div className="director-stage-card director-stage-approved">
-        <strong>Ready to render</strong>
+        <strong>{promo ? `${promo.duration}s promo · ${promo.aspectRatio} · ${promo.productName}` : "Ready to render"}</strong>
         <p>Generated clip audio is discarded. The original song remains the final music track.</p>
       </div>
       <div className="director-approval-bar">
@@ -1140,7 +1168,7 @@ function EditStep({
   );
 }
 
-function FinalStep({ url, onBack }: { url: string; onBack: () => void }) {
+function FinalStep({ url, promo, onBack }: { url: string; promo?: DirectorPromoBrief; onBack: () => void }) {
   const [downloading, setDownloading] = useState(false);
 
   const onDownload = async () => {
@@ -1156,7 +1184,7 @@ function FinalStep({ url, onBack }: { url: string; onBack: () => void }) {
     <section className="director-panel">
       <div className="director-section-heading">
         <span className="director-step-number">9</span>
-        <div><h2>Final Video</h2><p>Your rendered music video is ready to preview or download.</p></div>
+        <div><h2>Final Video</h2><p>{promo ? `${promo.productName} · ${promo.duration}s · ${promo.aspectRatio} promo music video` : "Your rendered music video is ready to preview or download."}</p></div>
       </div>
       <video src={url} controls playsInline preload="metadata" style={{ width: "100%", maxWidth: 960 }} />
       <div className="director-action-row">
