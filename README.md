@@ -1,20 +1,24 @@
-# EZAv2 — Professional Music Video Director
+# EZAv2 — Creative Music Video Director V2
 
 EZAv2 is an audio-aware music-video production app built around **BeatSync**, **Agnes Video V2.0**, local music analysis, Azure/OpenAI-assisted planning, and FFmpeg final rendering.
 
 ## Current modes
 
-### Professional Music Video Director
+### Creative Music Video Director V2
 
 The main guided workflow is **Vision + Song → Lyrics → Understanding → Treatment → Plan → Images → Takes → Edit → Final**.
 
 - Upload MP3, WAV, M4A, AAC, FLAC, OGG, or Opus.
 - Transcribe with Azure Whisper, paste/align official lyrics, or mark the track instrumental.
+- Multi-artist songs can label each timed lyric segment with an **Artist / Vocalist**. Official lyric headers such as `[Verse 1: Main Artist]`, `[Verse 2: Featured Artist]`, or `Featured Artist: lyric line` are recognized during alignment.
+- Song Understanding builds a grounded vocalist timing map from those approved labels. The Director carries the vocalist identity into each shot and maps it to a Character Lock with the same name, so a featured artist's verse is not automatically performed by Character 1.
 - Approve Song Understanding before Professional Treatment.
 - **Artist / Director Vision is the creative starting point / north star.** Song Understanding, style, timing, and locks support that vision instead of replacing it with a generic music-video template.
 - Pick a Director style after setting the Vision.
 - **Create a Completely New Concept** starts fresh and uses the previous treatment only as an anti-reference so the Director deliberately changes the visual world, metaphor, staging, camera grammar, or other major creative dimensions.
 - **Send Edit & Revise** is the separate path for preserving the current concept while changing specific parts.
+- Creative Director V2 is explicitly **auteur / concept-first**. It rejects interchangeable music-video filler, requires a song-specific visual thesis and evolving motifs, and rethinks a concept if it could work unchanged for a different song.
+- Crowd shots use Character Locks only for featured identities. Background extras are allowed as separate people and are explicitly prevented from copying the lead artist's face, body, hair, or wardrobe.
 - Review the Production Bible, up to 3 Character Locks, Asset Locks, and per-shot assignments.
 - Generate/approve storyboard images, then Agnes moving video takes.
 - Final Cut renders the MP4 with the original uploaded song, then exposes **Preview MP4** and **Download MP4**.
@@ -58,6 +62,10 @@ The Advanced Editor exposes lower-level timeline controls for Text → Image, Te
 The current Professional Director supports up to **3 Character Locks**, Asset Locks for vehicle/wardrobe/prop/location/product/style, per-shot lock assignment, Production Bible continuity, spatial-lock rules, and negative-prompt continuity controls.
 
 Each assigned Character Lock represents one unique person. Director image/video prompts explicitly prohibit cloned bodies, duplicate faces, twin copies, repeated performers, or extra copies of the same locked identity. Reflections are allowed only when the shot explicitly calls for one and must remain a reflection, not a second physical character.
+
+For multi-artist songs, name Character Locks exactly like the approved **Artist / Vocalist** labels so BeatSync can bind each verse to the correct performer. Crowd/background extras are intentionally excluded from Character Lock identity and must remain visually distinct.
+
+Locked props/assets are treated as hard continuity: recurring objects preserve exact design plus physical state, holder, placement, orientation, and location unless the shot plan explicitly shows a transition.
 
 At least one active Character Lock with a valid reference image is currently required before Professional Director storyboard generation begins.
 
