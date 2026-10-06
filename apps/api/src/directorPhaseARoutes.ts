@@ -97,6 +97,7 @@ export async function directorPhaseARoutes(app: FastifyInstance, options: Direct
     vision: z.string().max(4000).default(""),
     stylePrompt: z.string().max(2000).default(""),
     directorRequest: z.string().max(4000).default(""),
+    creativeMode: z.enum(["new", "revise"]).default("new"),
     previousPlan: DirectorPlan.optional(),
     previousProductionBible: ProductionBible.optional(),
     promo: DirectorPromoBrief.optional(),
