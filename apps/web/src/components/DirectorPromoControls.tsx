@@ -16,11 +16,12 @@ export function DirectorPromoControls({ songDuration, saved, busy, onGenerate }:
   const [casting, setCasting] = useState(saved?.casting ?? "");
   const [callToAction, setCallToAction] = useState(saved?.callToAction ?? "Visit our website to learn more.");
   const [duration, setDuration] = useState(saved?.duration ?? Math.min(30, songDuration));
+  const [aspectRatio, setAspectRatio] = useState<DirectorPromoBrief["aspectRatio"]>(saved?.aspectRatio ?? "9:16");
   const [reviewed, setReviewed] = useState(false);
   const [reading, setReading] = useState(false);
   const [error, setError] = useState("");
   const locked = busy || reading;
-  const brief = DirectorPromoBrief.safeParse({ sourceUrl, productName, facts, audience, casting, callToAction, duration, reviewed });
+  const brief = DirectorPromoBrief.safeParse({ sourceUrl, productName, facts, audience, casting, callToAction, duration, aspectRatio, reviewed });
   const changed = () => { setReviewed(false); setError(""); };
   async function readWebsite() {
     setReading(true); setReviewed(false); setError(""); setSourceUrl(undefined);
@@ -44,10 +45,18 @@ export function DirectorPromoControls({ songDuration, saved, busy, onGenerate }:
       <label>Audience<input value={audience} maxLength={500} onChange={(event) => { setAudience(event.target.value); changed(); }} /></label>
       <label>Casting and character direction<textarea value={casting} maxLength={1000} rows={2} placeholder="Describe the people you want, or request product-only footage. Use character references for identity consistency." onChange={(event) => { setCasting(event.target.value); changed(); }} /></label>
       <label>Call to action<input value={callToAction} maxLength={500} onChange={(event) => { setCallToAction(event.target.value); changed(); }} /></label>
+      <label>Platform / video size
+        <select value={aspectRatio} onChange={(event) => { setAspectRatio(event.target.value as DirectorPromoBrief["aspectRatio"]); changed(); }}>
+          <option value="9:16">Vertical 9:16 · TikTok / Reels / Shorts · 720×1280</option>
+          <option value="4:5">Portrait 4:5 · Instagram / Facebook feed · 720×900</option>
+          <option value="1:1">Square 1:1 · Instagram / Facebook feed · 720×720</option>
+          <option value="16:9">Landscape 16:9 · YouTube / web · 1280×720</option>
+        </select>
+      </label>
       <label>Promo length in seconds<input type="number" min={5} max={Math.min(120, songDuration)} step={1} value={duration} onChange={(event) => { setDuration(Number(event.target.value)); changed(); }} /></label>
       <div className="director-action-row">{[15, 30, 60].map((seconds) => <button key={seconds} type="button" className="btn" disabled={locked || seconds > songDuration} onClick={() => { setDuration(seconds); changed(); }}>{seconds}s</button>)}</div>
       <p>Uses the first {duration || 0} seconds of your uploaded music. Custom length: 5–{Math.min(120, Math.floor(songDuration))} seconds. The final player will show this version after rendering.</p>
-      <label className="director-product-review"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} /> I reviewed the product claims, casting and promo length.</label>
+      <label className="director-product-review"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} /> I reviewed the product claims, casting, promo length, and platform size.</label>
       <button type="button" className="director-primary" disabled={locked || !brief.success || duration > songDuration} onClick={() => { if (brief.success) onGenerate(brief.data); }}>{busy ? "Building Treatment…" : saved ? "Rebuild Promo Music Video Plan" : "Build Promo Music Video Plan"}</button>
       <p>Building a new plan replaces the current plan and takes. Your original music remains loaded. This creates a music-led promo; no voiceover is added.</p>
     </fieldset>
