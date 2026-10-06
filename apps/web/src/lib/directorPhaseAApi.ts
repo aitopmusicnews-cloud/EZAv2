@@ -63,6 +63,7 @@ export async function requestProfessionalTreatment(req: {
   vision: string;
   stylePrompt?: string;
   directorRequest?: string;
+  creativeMode?: "new" | "revise";
   previousPlan?: DirectorPlan;
   previousProductionBible?: ProductionBible;
   promo?: import("@mvs/shared").DirectorPromoBrief;
