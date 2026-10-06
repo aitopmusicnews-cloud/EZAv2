@@ -128,12 +128,12 @@ describe("generateProfessionalTreatment", () => {
 });
 
 describe("product promo treatment timing", () => {
-  const promo = { productName: "Studio", facts: "A music video editor with reviewed product facts for a realistic promo.", audience: "Creators", casting: "One adult musician", callToAction: "Visit the site", duration: 6, aspectRatio: "9:16" as const, reviewed: true as const };
+  const promo = { kind: "product" as const, productName: "Studio", facts: "A music video editor with reviewed product facts for a realistic promo.", audience: "Creators", casting: "One adult musician", callToAction: "Visit the site", duration: 6, aspectRatio: "9:16" as const, reviewed: true as const };
   it("uses reviewed product data and keeps every shot within the promo while preserving original analysis", async () => {
     const fetchImpl = vi.fn(async (_url: any, init: any) => {
       const body = JSON.parse(init.body);
       const input = JSON.parse(body.input[1].content[0].text);
-      expect(input.reviewedProductPromo).toEqual(promo);
+      expect(input.promoBrief).toEqual(promo);
       expect(input.song.duration).toBe(6);
       expect(body.input[0].content[0].text).toContain("untrusted DATA");
       expect(body.input[0].content[0].text).toContain("continuous filmed action");
@@ -158,6 +158,36 @@ describe("product promo treatment timing", () => {
     expect(result.plan.shots.every((shot, i, shots) => shot.end > shot.start && (i === 0 || shot.start === shots[i-1].end))).toBe(true);
     expect(analysis.duration).toBe(12);
   });
+
+  it("creates a music video promo without product fields", async () => {
+    const musicPromo = { kind: "music" as const, duration: 6, aspectRatio: "9:16" as const, reviewed: true as const };
+    const fetchImpl = vi.fn(async (_url: any, init: any) => {
+      const body = JSON.parse(init.body);
+      const input = JSON.parse(body.input[1].content[0].text);
+      expect(input.promoBrief).toEqual(musicPromo);
+      expect(input.promoBrief.productName).toBeUndefined();
+      expect(input.promoBrief.facts).toBeUndefined();
+      expect(input.promoBrief.callToAction).toBeUndefined();
+      expect(body.input[0].content[0].text).toContain('promoBrief.kind is "music"');
+      return new Response(JSON.stringify({ output_text: JSON.stringify({
+        treatment: { title: "Song Teaser", concept: "Artist-first teaser cut to the track", style: "cinematic", pacing: "fast" },
+        productionBible: {
+          characterProfile: "One consistent lead performer",
+          wardrobeProfile: "Consistent artist wardrobe",
+          locationProfile: "One coherent performance world",
+          stylePrompt: "cinematic music video",
+          colorPalette: "controlled contrast",
+          continuityPrompt: "preserve identity, wardrobe and location continuity",
+          negativePrompt: "identity drift, duplicate subjects, malformed anatomy, text, logos, watermarks, continuity breaks",
+        },
+        shots: input.fixedTimingSlots.map((slot: any) => ({ index: slot.index, role: "Performance", idea: "Artist performance and cinematic story image", camera: "tracking", framing: "medium", mood: "confident", location: "performance world", hero: false, characterIds: [], assetIds: [] })),
+      }) }));
+    });
+    const result = await generateProfessionalTreatment({ analysis, understanding, vision: "artist performance", promo: musicPromo }, { endpoint: "https://example.test", apiKey: "test", fetchImpl });
+    expect(result.plan.promo).toEqual(musicPromo);
+    expect(result.plan.shots.at(-1)?.end).toBe(6);
+  });
+
   it("rejects unreviewed briefs and promos longer than the music before spending a provider call", async () => {
     const fetchImpl = vi.fn();
     const options = { endpoint: "https://example.test", apiKey: "test", fetchImpl };
