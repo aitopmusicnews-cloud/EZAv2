@@ -22,6 +22,8 @@ type Slot = {
   sectionRole: string;
   lyricalPurpose: string;
   musicalPurpose: string;
+  vocalistArtist?: string;
+  vocalistRole?: string;
   energy: number;
 };
 
@@ -94,6 +96,8 @@ Rules:
 - If creativeMode is "revise" and previousPlan is supplied, preserve strong existing decisions the human did not ask to change while returning a complete revised treatment and full shot plan.
 - If creativeMode is "new", previousPlan is an ANTI-REFERENCE only. Do not revise or preserve its concept. Deliberately create a substantially different treatment while honoring the current Artist / Director Vision, Song Understanding, locks, and selected style. Change at least three major creative dimensions such as visual world/location, central metaphor, performance setup, narrative device, camera grammar, lighting/palette, or hero-shot concept. Do not reuse the previous title, core concept, shot pattern, or recurring staging simply because it existed before.
 - Assign characterIds (0–3) and assetIds for EVERY shot using ONLY active lock IDs from previousProductionBible. An empty characterIds means no people. Never put unassigned people or locked assets in the shot idea. Locked reference identities override generic character descriptions. Never blend different characters into one person.
+- MULTI-ARTIST SONGS: fixedTimingSlots may include vocalistArtist. That label is authoritative for who performs that timed section. When a Character Lock name matches the vocalist label, use that matching lock for artist-performance shots and do not substitute another locked artist. Do not put the lead artist into a featured artist's verse merely because Character 1 is the lead.
+- vocalistCharacterBindings lists reliable artist-label → Character Lock matches by lock name. Use those bindings as authoritative. If a vocalist has no matching Character Lock, do not pretend another locked identity is that artist; favor story/environment coverage until the user maps the correct lock.
 - Preserve previous per-shot assignments only when creativeMode is "revise", unless the director explicitly requests a cast or asset change. In creativeMode "new", keep the same active Character/Asset Locks available but freely reassign them to support the new concept.
 - Make each shot specific enough for image generation and image-to-video generation.
 - Casting is a Director decision: define a concrete character/cast profile before storyboard generation instead of relying on image-model defaults.
@@ -188,6 +192,8 @@ function slotsFor(analysis: AudioAnalysis, understanding: SongUnderstanding): Sl
       sectionRole: section?.inferredRole ?? "music-led section",
       lyricalPurpose: section?.lyricalPurpose ?? "No lyric-specific purpose supplied.",
       musicalPurpose: section?.musicalPurpose ?? "Follow the supplied music structure and energy.",
+      vocalistArtist: understanding.vocalistSections.find((item) => midpoint >= item.start && midpoint <= item.end)?.artist,
+      vocalistRole: understanding.vocalistSections.find((item) => midpoint >= item.start && midpoint <= item.end)?.role,
       energy: averageEnergy(analysis, start, end),
     };
   }).filter((slot) => slot.end > slot.start);
@@ -233,6 +239,13 @@ export async function generateProfessionalTreatment(
   } : input.analysis;
 
   const locks = normalizeProductionLocks(input.previousProductionBible ?? {});
+  const normalizedArtist = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const vocalistCharacterBindings = input.understanding.vocalistSections.map((section) => ({
+    artist: section.artist,
+    characterIds: locks.characterLocks!
+      .filter((lock) => lock.locked && normalizedArtist(lock.name) === normalizedArtist(section.artist))
+      .map((lock) => lock.id),
+  }));
   const slots = slotsFor(timingAnalysis, input.understanding);
   if (!slots.length) throw new Error("Could not create treatment timing slots from this song.");
 
@@ -257,6 +270,7 @@ export async function generateProfessionalTreatment(
               promoBrief: promo,
               song: { duration: timingAnalysis.duration, bpm: input.analysis.bpm, key: input.analysis.key },
               understanding: input.understanding,
+              vocalistCharacterBindings,
               fixedTimingSlots: slots,
             }),
           }],
@@ -318,6 +332,7 @@ export async function generateProfessionalTreatment(
         mood: creative.mood,
         location: creative.location,
         energy: slot.energy,
+        performerArtist: slot.vocalistArtist,
         hero: creative.hero,
         ...normalizeShotLocks({ characterIds: creative.characterIds ?? [], assetIds: creative.assetIds ?? [] }, locks),
         imageStatus: "idle",
