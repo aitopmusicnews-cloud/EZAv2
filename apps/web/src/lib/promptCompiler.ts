@@ -136,7 +136,8 @@ function automaticNegativeTerms(lock?: SpatialLock | null): string[] {
 export function compileNegativePrompt(input: PromptCompileInput): string {
   const lock = input.spatialLock ?? input.productionBible?.defaultSpatialLock;
   const characterRefs = lockedRefs(input.referenceAssets, "character");
-  const identityNegatives = characterRefs.length
+  const hasCharacterIdentity = characterRefs.length > 0 || Boolean(input.productionBible?.characterProfile?.trim());
+  const identityNegatives = hasCharacterIdentity
     ? ["duplicate character", "cloned person", "duplicate face", "duplicate body", "twin copy of same person", "repeated identity", "extra copy of character"]
     : [];
   const terms = [
