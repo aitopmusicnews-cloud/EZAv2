@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { mkdir, rm, unlink, writeFile } from "node:fs/promises";
 import { paths, storage } from "./storage.js";
 import { config } from "./config.js";
@@ -107,7 +107,8 @@ function buildTimelineSlices(req: RenderRequest): TimelineSlice[] {
 }
 
 function concatFileLine(path: string): string {
-  return `file '${path.replace(/'/g, "'\\''")}'`;
+  const absolutePath = resolve(path);
+  return `file '${absolutePath.replace(/'/g, "'\\''")}'`;
 }
 
 async function renderBlackSlice(outputPath: string, duration: number): Promise<void> {
