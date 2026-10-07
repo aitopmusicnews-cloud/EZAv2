@@ -27,7 +27,9 @@ import {
   approveAllReadyDirectorClips,
   approveAllStoryboardImages,
   enqueueDirectorVideos,
+  generateStoryboardImage,
   generateStoryboardImages,
+  regenerateDirectorVideo,
   renderDirectorFinal,
 } from "../lib/directorActions.js";
 import "../styles/director.css";
@@ -141,6 +143,9 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
   const [error, setError] = useState<string | null>(null);
   const [officialLyrics, setOfficialLyrics] = useState("");
   const [directorRequest, setDirectorRequest] = useState("");
+  const [directorMode, setDirectorMode] = useState<"full" | "music-promo" | "product-promo">(
+    directorPlan?.promo?.kind === "music" ? "music-promo" : directorPlan?.promo?.kind === "product" ? "product-promo" : "full"
+  );
   const [selectedStyleId, setSelectedStyleId] = useState<DirectorStyleId>("director-choice");
   const selectedStyle = DIRECTOR_STYLES.find((style) => style.id === selectedStyleId) ?? DIRECTOR_STYLES[0];
 
@@ -520,14 +525,40 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
 
         {effectiveStage === "treatment" && (
           <>
-            <DirectorPromoControls
-              key={songId}
-              songDuration={analysis?.duration ?? 0}
-              saved={directorPlan?.promo}
-              busy={!!busy}
-              onGenerate={(brief) => void buildProfessionalTreatment(brief, "new")}
-            />
-            <TreatmentStep
+            <div className="director-panel">
+              <div className="director-section-heading">
+                <span className="director-step-number">4</span>
+                <div>
+                  <h2>Choose Director Mode</h2>
+                  <p>Each mode has its own treatment path so full videos and promos do not share requirements.</p>
+                </div>
+              </div>
+              <div className="director-style-grid">
+                <button type="button" className={directorMode === "full" ? "director-style-card selected" : "director-style-card"} onClick={() => setDirectorMode("full")}>
+                  <strong>Full Music Video Director</strong>
+                  <span>Build the complete song-length music video.</span>
+                </button>
+                <button type="button" className={directorMode === "music-promo" ? "director-style-card selected" : "director-style-card"} onClick={() => setDirectorMode("music-promo")}>
+                  <strong>Music Video Promo Director</strong>
+                  <span>Build a short 5–120 second song promo with its own length and format.</span>
+                </button>
+                <button type="button" className={directorMode === "product-promo" ? "director-style-card selected" : "director-style-card"} onClick={() => setDirectorMode("product-promo")}>
+                  <strong>Product Promo Director</strong>
+                  <span>Build a product/service promo from reviewed marketing facts.</span>
+                </button>
+              </div>
+            </div>
+            {directorMode !== "full" && (
+              <DirectorPromoControls
+                key={`${songId}-${directorMode}`}
+                songDuration={analysis?.duration ?? 0}
+                saved={directorPlan?.promo}
+                busy={!!busy}
+                mode={directorMode === "music-promo" ? "music" : "product"}
+                onGenerate={(brief) => void buildProfessionalTreatment(brief, "new")}
+              />
+            )}
+            {directorMode === "full" && <TreatmentStep
               plan={directorPlan}
               busy={busy}
               selectedStyleId={selectedStyleId}
@@ -540,7 +571,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
               onRevise={() => void buildProfessionalTreatment(directorPlan?.promo, "revise")}
               onReviewPlan={() => setDirectorStage("plan")}
               onBack={() => setDirectorStage("understanding")}
-            />
+            />}
           </>
         )}
 
@@ -564,6 +595,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
             plan={directorPlan}
             busy={busy}
             onGenerate={() => void generateImages()}
+            onReviseImage={(shotId, instruction) => generateStoryboardImage(shotId, instruction)}
             onContinue={approveImagesAndContinue}
             onBack={() => setDirectorStage("plan")}
           />
@@ -575,6 +607,7 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
             clips={clips}
             allReady={videoTakesReady}
             onGenerate={generateVideoTakes}
+            onReviseVideo={(shotId, instruction) => regenerateDirectorVideo(shotId, instruction)}
             onContinue={approveTakesAndContinue}
             onBack={() => setDirectorStage("images")}
           />
