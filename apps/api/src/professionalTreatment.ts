@@ -27,6 +27,33 @@ type Slot = {
   energy: number;
 };
 
+
+const IDEATION_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["concepts"],
+  properties: {
+    concepts: {
+      type: "array",
+      minItems: 3,
+      maxItems: 3,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "thesis", "world", "cameraLanguage", "motifs", "whyDifferent"],
+        properties: {
+          title: { type: "string" },
+          thesis: { type: "string" },
+          world: { type: "string" },
+          cameraLanguage: { type: "string" },
+          motifs: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 4 },
+          whyDifferent: { type: "string" },
+        },
+      },
+    },
+  },
+} as const;
+
 const TREATMENT_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -249,7 +276,75 @@ export async function generateProfessionalTreatment(
   const slots = slotsFor(timingAnalysis, input.understanding);
   if (!slots.length) throw new Error("Could not create treatment timing slots from this song.");
 
-  const response = await (options.fetchImpl ?? fetch)(endpoint, {
+  const fetchImpl = options.fetchImpl ?? fetch;
+
+  const ideationResponse = await fetchImpl(endpoint, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      model,
+      input: [
+        {
+          role: "system",
+          content: [{
+            type: "input_text",
+            text: `You are BeatSync's Concept Director. Generate exactly three radically different music-video concepts for the supplied project before any shot planning happens.
+
+Rules:
+- Each concept must differ in world/location strategy, central metaphor or narrative device, camera language, lighting/palette, and hero-shot idea.
+- Do not recycle generic defaults such as neon city streets, empty warehouses, rooftops, clubs, or simple walk-and-perform coverage unless specifically demanded by the Artist / Director Vision.
+- The Artist / Director Vision is the creative north star.
+- Respect song meaning, vocalist labels, active Character Locks, active Asset Locks, and promo mode.
+- If a previous plan is supplied in creativeMode="new", treat it only as an anti-reference and deliberately avoid its concept, locations, staging, and shot grammar.
+- Return concepts only. Do not write a shot list yet.`
+          }],
+        },
+        {
+          role: "user",
+          content: [{
+            type: "input_text",
+            text: JSON.stringify({
+              artistDirectorVision: input.vision,
+              creativeMode: input.creativeMode ?? "new",
+              selectedVisualStyle: input.stylePrompt?.trim() || undefined,
+              directorRequest: input.directorRequest?.trim() || undefined,
+              previousPlan: input.previousPlan,
+              previousProductionBible: locks,
+              promoBrief: promo,
+              understanding: input.understanding,
+              vocalistCharacterBindings,
+            }),
+          }],
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "director_concept_candidates",
+          strict: true,
+          schema: IDEATION_SCHEMA,
+        },
+      },
+    }),
+  });
+
+  if (!ideationResponse.ok) {
+    throw new Error(`Director concept generation failed (${ideationResponse.status}): ${await safeProviderError(ideationResponse)}`);
+  }
+  const ideationText = extractOutputText(await ideationResponse.json() as unknown);
+  if (!ideationText) throw new Error("Director concept generation returned no structured output.");
+
+  let conceptCandidates: any;
+  try {
+    conceptCandidates = JSON.parse(ideationText);
+  } catch {
+    throw new Error("Director concept generation returned invalid JSON.");
+  }
+  if (!Array.isArray(conceptCandidates?.concepts) || conceptCandidates.concepts.length !== 3) {
+    throw new Error("Director concept generation did not return exactly three concepts.");
+  }
+
+  const response = await fetchImpl(endpoint, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
     body: JSON.stringify({
@@ -271,6 +366,8 @@ export async function generateProfessionalTreatment(
               song: { duration: timingAnalysis.duration, bpm: input.analysis.bpm, key: input.analysis.key },
               understanding: input.understanding,
               vocalistCharacterBindings,
+              conceptCandidates: conceptCandidates.concepts,
+              selectionInstruction: "Choose the strongest concept for this specific song and execute it. Do not blend all three into a generic hybrid. Commit to one clear visual thesis.",
               fixedTimingSlots: slots,
             }),
           }],
