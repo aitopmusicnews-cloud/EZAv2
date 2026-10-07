@@ -112,6 +112,35 @@ export function compileVideoPrompt(input: PromptCompileInput): string {
   return compileCore(input);
 }
 
+const HARD_CONTINUITY_NEGATIVES = [
+  "duplicate character",
+  "cloned person",
+  "duplicate face",
+  "duplicate body",
+  "twin copy of same person",
+  "repeated identity",
+  "extra copy of character",
+  "double character",
+  "same person twice",
+  "two versions of the same performer",
+  "identity drift",
+  "face drift",
+  "wardrobe drift",
+  "hair drift",
+  "age drift",
+  "skin tone drift",
+  "body type drift",
+  "prop redesign",
+  "vehicle redesign",
+  "location continuity break",
+  "mirrored identity",
+  "unintended reflection",
+  "extra limbs",
+  "extra fingers",
+  "deformed hands",
+  "duplicated props",
+];
+
 function splitNegativeTerms(value?: string | null): string[] {
   if (!value) return [];
   return value
@@ -137,9 +166,7 @@ export function compileNegativePrompt(input: PromptCompileInput): string {
   const lock = input.spatialLock ?? input.productionBible?.defaultSpatialLock;
   const characterRefs = lockedRefs(input.referenceAssets, "character");
   const hasCharacterIdentity = characterRefs.length > 0 || Boolean(input.productionBible?.characterProfile?.trim());
-  const identityNegatives = hasCharacterIdentity
-    ? ["duplicate character", "cloned person", "duplicate face", "duplicate body", "twin copy of same person", "repeated identity", "extra copy of character"]
-    : [];
+  const identityNegatives = hasCharacterIdentity ? HARD_CONTINUITY_NEGATIVES : HARD_CONTINUITY_NEGATIVES;
   const terms = [
     ...splitNegativeTerms(input.productionBible?.negativePrompt),
     ...splitNegativeTerms(input.negativePrompt),
