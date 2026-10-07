@@ -40,12 +40,15 @@ const Env = z.object({
       "WEB_ORIGIN must be a URL or comma-separated list of URLs"
     ),
   STORAGE_DIR: z.string().default("./storage"),
-  STORAGE_BACKEND: z.enum(["local", "s3"]).default("local"),
+  STORAGE_BACKEND: z.enum(["local", "s3", "azure"]).default("local"),
   S3_BUCKET: optionalNonEmpty.optional(),
   S3_REGION: optionalNonEmpty.optional(),
   /** Override the public URL base for S3 objects (e.g. a CloudFront domain).
    * When unset, virtual-hosted-style S3 URLs are used. */
   S3_PUBLIC_URL_BASE: optionalUrl.optional(),
+  AZURE_STORAGE_CONNECTION_STRING: optionalNonEmpty.optional(),
+  AZURE_STORAGE_CONTAINER: z.string().min(1).default("ezav2-media"),
+  AZURE_STORAGE_PUBLIC_BASE: optionalUrl.optional(),
   /** Directory holding the built SPA (apps/web/dist) to serve from `/`.
    *  In the production Docker image this is set to /app/web; locally it can
    *  stay unset and Vite handles the SPA in dev. */
@@ -88,6 +91,11 @@ if (!(config.AZURE_OPENAI_TTS_API_KEY || config.AZURE_OPENAI_MAIN_API_KEY)) {
 if (config.STORAGE_BACKEND === "s3") {
   if (!config.S3_BUCKET || !config.S3_REGION) {
     console.error("STORAGE_BACKEND=s3 requires S3_BUCKET and S3_REGION");
+    process.exit(1);
+  }
+} else if (config.STORAGE_BACKEND === "azure") {
+  if (!config.AZURE_STORAGE_CONNECTION_STRING) {
+    console.error("STORAGE_BACKEND=azure requires AZURE_STORAGE_CONNECTION_STRING");
     process.exit(1);
   }
 } else {
