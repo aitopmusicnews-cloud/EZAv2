@@ -214,10 +214,10 @@ export async function generateProfessionalTreatment(
   options: Options = {},
 ): Promise<{ plan: DirectorPlanType; productionBible: ProductionBibleType }> {
   if (!input.understanding.approvedAt) throw new Error("Approve Song Understanding before generating a treatment.");
-  const endpoint = options.endpoint ?? config.AZURE_OPENAI_MAIN_ENDPOINT;
-  const apiKey = options.apiKey ?? config.AZURE_OPENAI_MAIN_API_KEY;
-  const model = options.model ?? config.AZURE_OPENAI_MAIN_DEPLOYMENT;
-  if (!endpoint || !apiKey) throw new Error("Azure OpenAI main model is not configured.");
+  const endpoint = options.endpoint ?? "https://api.openai.com/v1/responses";
+  const apiKey = options.apiKey ?? config.OPENAI_API_KEY;
+  const model = options.model ?? config.DIRECTOR_MODEL;
+  if (!apiKey) throw new Error("OpenAI Creative Director is not configured. Set OPENAI_API_KEY in Render.");
 
   const promo = input.promo ? DirectorPromoBrief.parse(input.promo) : undefined;
   if (promo && promo.duration > input.analysis.duration) {
@@ -251,7 +251,7 @@ export async function generateProfessionalTreatment(
 
   const response = await (options.fetchImpl ?? fetch)(endpoint, {
     method: "POST",
-    headers: { "api-key": apiKey, "content-type": "application/json" },
+    headers: { Authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
     body: JSON.stringify({
       model,
       input: [
