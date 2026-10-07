@@ -1150,15 +1150,20 @@ function ImagesStep({
   plan,
   busy,
   onGenerate,
+  onReviseImage,
   onContinue,
   onBack,
 }: {
   plan: DirectorPlan;
   busy: string | null;
   onGenerate: () => void;
+  onReviseImage: (shotId: string, instruction: string) => Promise<string>;
   onContinue: () => void;
   onBack: () => void;
 }) {
+  const [revisionText, setRevisionText] = useState<Record<string, string>>({});
+  const [revisingShot, setRevisingShot] = useState<string | null>(null);
+  const [revisionError, setRevisionError] = useState<Record<string, string>>({});
   const ready = plan.shots.filter((shot) => shot.imageStatus === "ready" && shot.imageUrl).length;
   const allReady = ready === plan.shots.length;
   return (
@@ -1172,6 +1177,35 @@ function ImagesStep({
           <div className="director-stage-card" key={shot.id}>
             <strong>{shot.role} · {formatTime(shot.start)}–{formatTime(shot.end)}</strong>
             {shot.imageUrl ? <img src={shot.imageUrl} alt={shot.role} style={{ width: "100%", borderRadius: 8 }} /> : <p>{shot.imageStatus === "failed" ? shot.imageError ?? "Image generation failed." : "Waiting for storyboard image."}</p>}
+            {shot.imageUrl && (
+              <div className="director-request-box">
+                <textarea
+                  value={revisionText[shot.id] ?? ""}
+                  onChange={(event) => setRevisionText((current) => ({ ...current, [shot.id]: event.target.value }))}
+                  placeholder="Edit this image: describe only what should change. Character and asset continuity stay locked."
+                />
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={revisingShot === shot.id || !(revisionText[shot.id] ?? "").trim()}
+                  onClick={async () => {
+                    setRevisingShot(shot.id);
+                    setRevisionError((current) => ({ ...current, [shot.id]: "" }));
+                    try {
+                      await onReviseImage(shot.id, revisionText[shot.id] ?? "");
+                      setRevisionText((current) => ({ ...current, [shot.id]: "" }));
+                    } catch (error) {
+                      setRevisionError((current) => ({ ...current, [shot.id]: getErrorMessage(error) }));
+                    } finally {
+                      setRevisingShot(null);
+                    }
+                  }}
+                >
+                  {revisingShot === shot.id ? "Editing Image…" : "Edit Image With Prompt"}
+                </button>
+                {revisionError[shot.id] && <p role="alert">{revisionError[shot.id]}</p>}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -1189,6 +1223,7 @@ function TakesStep({
   clips,
   allReady,
   onGenerate,
+  onReviseVideo,
   onContinue,
   onBack,
 }: {
@@ -1196,9 +1231,12 @@ function TakesStep({
   clips: Clip[];
   allReady: boolean;
   onGenerate: () => void;
+  onReviseVideo: (shotId: string, instruction: string) => string;
   onContinue: () => void;
   onBack: () => void;
 }) {
+  const [revisionText, setRevisionText] = useState<Record<string, string>>({});
+  const [revisionError, setRevisionError] = useState<Record<string, string>>({});
   const readyCount = plan.shots.filter((shot) => clips.find((clip) => clip.id === shot.clipId)?.status === "ready").length;
   const active = plan.shots.some((shot) => {
     const status = clips.find((clip) => clip.id === shot.clipId)?.status;
