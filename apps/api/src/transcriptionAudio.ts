@@ -11,6 +11,7 @@ function trustedStorageOrigins(): Set<string> {
   const origins = new Set<string>();
   origins.add(new URL(config.PUBLIC_BASE_URL).origin);
   if (config.S3_PUBLIC_URL_BASE) origins.add(new URL(config.S3_PUBLIC_URL_BASE).origin);
+  if (config.AZURE_STORAGE_PUBLIC_BASE) origins.add(new URL(config.AZURE_STORAGE_PUBLIC_BASE).origin);
   if (config.S3_BUCKET && config.S3_REGION) {
     origins.add(`https://${config.S3_BUCKET}.s3.${config.S3_REGION}.amazonaws.com`);
   }
