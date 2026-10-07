@@ -567,8 +567,8 @@ export function DirectorWorkspace({ onOpenAdvanced }: { onOpenAdvanced: () => vo
               onDirectorRequest={setDirectorRequest}
               vision={directorVision}
               onVisionChange={setDirectorVision}
-              onGenerateNew={() => void buildProfessionalTreatment(directorPlan?.promo, "new")}
-              onRevise={() => void buildProfessionalTreatment(directorPlan?.promo, "revise")}
+              onGenerateNew={() => void buildProfessionalTreatment(undefined, "new")}
+              onRevise={() => void buildProfessionalTreatment(undefined, "revise")}
               onReviewPlan={() => setDirectorStage("plan")}
               onBack={() => setDirectorStage("understanding")}
             />}
