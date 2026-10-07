@@ -11,6 +11,7 @@ import {
   ListObjectsV2Command,
   type _Object,
 } from "@aws-sdk/client-s3";
+import { BlobServiceClient, type ContainerClient } from "@azure/storage-blob";
 import { AudioAnalysis } from "@mvs/shared";
 import { config } from "./config.js";
 import { mimeType } from "./paths.js";
@@ -57,12 +58,10 @@ export interface FileEntry {
 
 // --- Storage backend abstraction ---------------------------------------
 //
-// Two implementations:
+// Three implementations:
 //   - local: writes to STORAGE_DIR; URLs go through Fastify's static serve.
-//     Fine for dev. On Fargate, container-local disk is ephemeral, so
-//     production runs the s3 backend.
-//   - s3:    PutObject to S3_BUCKET; URLs are virtual-hosted-style or
-//            S3_PUBLIC_URL_BASE (CloudFront). Survives container restarts.
+//   - s3: legacy production backend.
+//   - azure: Azure Blob Storage for Render-hosted production without AWS.
 //
 // Both backends expose JSON metadata helpers (saveJson/loadJson/...) so
 // project, clip, image and analysis sidecars persist across task replacement
@@ -341,6 +340,102 @@ class S3Backend implements StorageBackend {
   }
 }
 
+class AzureBlobBackend implements StorageBackend {
+  private container: ContainerClient;
+  private publicBase?: string;
+
+  constructor() {
+    const service = BlobServiceClient.fromConnectionString(config.AZURE_STORAGE_CONNECTION_STRING!);
+    this.container = service.getContainerClient(config.AZURE_STORAGE_CONTAINER);
+    this.publicBase = config.AZURE_STORAGE_PUBLIC_BASE;
+  }
+
+  private url(key: string): string {
+    if (this.publicBase) return `${this.publicBase.replace(/\/$/, "")}/${key}`;
+    return this.container.getBlobClient(key).url;
+  }
+
+  async saveUpload(buf: Buffer, originalName: string, contentType?: string) {
+    const id = hashBuffer(buf);
+    const ext = extname(originalName) || ".bin";
+    const key = `uploads/${id}${ext}`;
+    const blob = this.container.getBlockBlobClient(key);
+    if (!(await blob.exists())) {
+      await blob.uploadData(buf, {
+        blobHTTPHeaders: {
+          blobContentType: contentType ?? mimeType(ext),
+          blobCacheControl: "public, max-age=31536000, immutable",
+        },
+      });
+    }
+    return { id, publicUrl: this.url(key) };
+  }
+
+  async providerUrl(rawUrl: string): Promise<string> {
+    const parsed = new URL(rawUrl, this.publicBase ?? this.container.url);
+    if (parsed.protocol !== "https:") {
+      throw new Error("Agnes image inputs require a public HTTPS URL.");
+    }
+    return parsed.toString();
+  }
+
+  async saveRender(localPath: string, key: string, contentType?: string) {
+    const objectKey = `renders/${key}`;
+    const ext = extname(key);
+    const blob = this.container.getBlockBlobClient(objectKey);
+    await blob.uploadFile(localPath, {
+      blobHTTPHeaders: {
+        blobContentType: contentType ?? mimeType(ext),
+        blobCacheControl: "public, max-age=31536000, immutable",
+      },
+    });
+    return { publicUrl: this.url(objectKey) };
+  }
+
+  async saveJson(key: string, data: unknown): Promise<void> {
+    const blob = this.container.getBlockBlobClient(key);
+    await blob.upload(JSON.stringify(data), Buffer.byteLength(JSON.stringify(data)), {
+      blobHTTPHeaders: {
+        blobContentType: "application/json",
+        blobCacheControl: "no-store, max-age=0",
+      },
+    });
+  }
+
+  async loadJson<T>(key: string): Promise<T | null> {
+    const blob = this.container.getBlockBlobClient(key);
+    if (!(await blob.exists())) return null;
+    const buffer = await blob.downloadToBuffer();
+    return JSON.parse(buffer.toString("utf8")) as T;
+  }
+
+  async listJson(prefix: string): Promise<string[]> {
+    const out: string[] = [];
+    for await (const blob of this.container.listBlobsFlat({ prefix })) {
+      if (blob.name.endsWith(".json")) out.push(blob.name);
+    }
+    return out;
+  }
+
+  async deleteJson(key: string): Promise<boolean> {
+    const result = await this.container.getBlobClient(key).deleteIfExists();
+    return result.succeeded;
+  }
+
+  async listFiles(prefix: string): Promise<FileEntry[]> {
+    const out: FileEntry[] = [];
+    for await (const blob of this.container.listBlobsFlat({ prefix })) {
+      out.push({
+        key: blob.name,
+        publicUrl: this.url(blob.name),
+        size: blob.properties.contentLength ?? 0,
+        modifiedAt: blob.properties.lastModified?.toISOString() ?? new Date(0).toISOString(),
+      });
+    }
+    return out;
+  }
+}
+
 function isNoSuchKey(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const e = err as { name?: string; Code?: string; $metadata?: { httpStatusCode?: number } };
@@ -348,7 +443,11 @@ function isNoSuchKey(err: unknown): boolean {
 }
 
 export const storage: StorageBackend =
-  config.STORAGE_BACKEND === "s3" ? new S3Backend() : new LocalBackend();
+  config.STORAGE_BACKEND === "s3"
+    ? new S3Backend()
+    : config.STORAGE_BACKEND === "azure"
+      ? new AzureBlobBackend()
+      : new LocalBackend();
 
 export async function providerUrl(rawUrl: string, expiresInSeconds = 900): Promise<string> {
   return storage.providerUrl(rawUrl, expiresInSeconds);
