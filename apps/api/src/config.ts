@@ -24,7 +24,7 @@ const Env = z.object({
   AZURE_OPENAI_TRANSCRIPTION_ENDPOINT: z.string().url().default("https://ezvids-resource.openai.azure.com/openai/deployments/whisper/audio/transcriptions?api-version=2025-04-01-preview"),
   AZURE_OPENAI_TRANSCRIPTION_API_KEY: optionalNonEmpty.optional(),
   SONG_UNDERSTANDING_MODEL: z.string().min(1).default("gpt-5.6"),
-  DIRECTOR_MODEL: z.string().min(1).default("gpt-5.6"),
+  DIRECTOR_MODEL: z.string().min(1).default("gpt-5.6-sol"),
   PORT: z.coerce.number().default(3001),
   PUBLIC_BASE_URL: z.string().url().default("http://localhost:3001"),
   // Comma-separated list of allowed CORS origins (or a single URL).
