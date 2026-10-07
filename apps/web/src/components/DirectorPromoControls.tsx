@@ -46,10 +46,11 @@ function PlatformAndLength({
   </>;
 }
 
-export function DirectorPromoControls({ songDuration, saved, busy, onGenerate }: {
+export function DirectorPromoControls({ songDuration, saved, busy, mode, onGenerate }: {
   songDuration: number;
   saved?: DirectorPromoBrief;
   busy: boolean;
+  mode: "music" | "product";
   onGenerate: (brief: DirectorPromoBrief) => void;
 }) {
   const savedMusic = saved?.kind === "music" ? saved : undefined;
@@ -116,7 +117,7 @@ export function DirectorPromoControls({ songDuration, saved, busy, onGenerate }:
   }
 
   return <div className="director-promo-options">
-    <details className="director-panel director-music-promo" open={savedMusic ? true : undefined}>
+    {mode === "music" && <details className="director-panel director-music-promo" open>
       <summary><strong>Create a Music Video Promo</strong></summary>
       <p>No product information is needed. The Director uses the approved song understanding, your Director vision, selected style, Character/Asset Locks, and the music to build a shorter promotional music video.</p>
       <fieldset disabled={busy}>
@@ -138,9 +139,9 @@ export function DirectorPromoControls({ songDuration, saved, busy, onGenerate }:
         </button>
         <p>This creates generated moving footage cut to your song. It does not require a website, product description, audience field, or call to action.</p>
       </fieldset>
-    </details>
+    </details>}
 
-    <details className="director-panel director-product-promo" open={savedProduct ? true : undefined}>
+    {mode === "product" && <details className="director-panel director-product-promo" open>
       <summary><strong>Create a Product Promo Video</strong></summary>
       <p>Use this only when the video is promoting a product, service, app, website, or business and the Director needs factual marketing information.</p>
       <fieldset disabled={locked}>
@@ -171,6 +172,6 @@ export function DirectorPromoControls({ songDuration, saved, busy, onGenerate }:
         </button>
       </fieldset>
       {error && <p role="alert">{error}</p>}
-    </details>
+    </details>}
   </div>;
 }
