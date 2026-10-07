@@ -19,7 +19,7 @@ function approvedPlan() {
   return plan;
 }
 
-export async function generateStoryboardImage(shotId: string): Promise<string> {
+export async function generateStoryboardImage(shotId: string, revisionInstruction = ""): Promise<string> {
   const state = useStore.getState();
   const plan = approvedPlan();
   const shot = plan.shots.find((item) => item.id === shotId);
@@ -28,11 +28,28 @@ export async function generateStoryboardImage(shotId: string): Promise<string> {
   const generationShot = useStore.getState().directorPlan?.shots.find((item) => item.id === shotId);
   const isCurrent = () => useStore.getState().directorPlan?.shots.find((item) => item.id === shotId) === generationShot;
   try {
-    const request = compileDirectorImageRequest(
+    let request = compileDirectorImageRequest(
       shot,
       state.productionBible ?? {},
       state.referenceAssets,
     );
+    const revision = revisionInstruction.trim();
+    if (revision) {
+      const existing = shot.imageUrl
+        ? [{ id: `revision_${shot.id}`, url: shot.imageUrl, name: "Approved storyboard to revise", role: "style" as const, locked: true }]
+        : [];
+      const mergedRefs = [...(request.referenceImages ?? []), ...existing].slice(0, 8);
+      request = {
+        ...request,
+        promptText: `${request.promptText}
+
+[USER REVISION - APPLY THIS CHANGE]
+${revision}
+Preserve all Character Locks, Asset Locks, identity, wardrobe, props, location continuity, camera intent, and every detail not explicitly changed above.`,
+        mode: mergedRefs.length >= 2 ? "compose" : mergedRefs.length === 1 ? "img2img" : "text2img",
+        ...(mergedRefs.length ? { referenceImages: mergedRefs } : {}),
+      };
+    }
     const image = await generateTextToImage(request);
     if (!isCurrent()) throw new Error("The shot changed during generation. Generate its updated storyboard again.");
     useStore.getState().setDirectorShotImage(shotId, { status: "ready", url: image.url });
@@ -65,7 +82,7 @@ export function approveAllStoryboardImages(): void {
   }
 }
 
-export function regenerateDirectorVideo(shotId: string): string {
+export function regenerateDirectorVideo(shotId: string, revisionInstruction = ""): string {
   const state = useStore.getState();
   const plan = approvedPlan();
   const shot = plan.shots.find((item) => item.id === shotId);
@@ -76,11 +93,19 @@ export function regenerateDirectorVideo(shotId: string): string {
   const clip = state.clips.find((item) => item.id === shot.clipId);
   if (!clip) throw new Error("Director timeline clip not found.");
   const compiled = compileDirectorVideoRequest(shot, state.productionBible ?? {}, state.referenceAssets);
+  const revision = revisionInstruction.trim();
+  const revisedPrompt = revision
+    ? `${compiled.promptText}
+
+[USER VIDEO REVISION - APPLY THIS CHANGE]
+${revision}
+Preserve identity, wardrobe, props, location, approved storyboard composition, and all continuity details not explicitly changed above.`
+    : compiled.promptText;
   state.approveDirectorClip(shotId, false);
   state.updateClip(clip.id, {
     source: "imageToVideo",
     archetypeUrl: shot.imageUrl,
-    prompt: compiled.promptText,
+    prompt: revisedPrompt,
     negativePrompt: compiled.negativePrompt || undefined,
     referenceAssetIds: compiled.referenceAssetIds,
     model: AGNES_VIDEO_MODEL,
@@ -94,7 +119,7 @@ export function regenerateDirectorVideo(shotId: string): string {
     clipId: clip.id,
     source: "imageToVideo",
     seedImageUrl: shot.imageUrl,
-    prompt: compiled.promptText,
+    prompt: revisedPrompt,
     negativePrompt: compiled.negativePrompt,
     duration: shot.end - shot.start,
     sectionLabel: shot.sectionLabel,
