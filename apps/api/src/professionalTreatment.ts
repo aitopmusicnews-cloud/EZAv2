@@ -238,7 +238,7 @@ export async function generateProfessionalTreatment(
   const apiKey = options.apiKey ?? (useAzure ? config.AZURE_OPENAI_MAIN_API_KEY! : config.OPENAI_API_KEY);
   const model = options.model ?? (useAzure ? config.AZURE_OPENAI_MAIN_DEPLOYMENT : config.DIRECTOR_MODEL);
   if (!apiKey) throw new Error("Creative Director is not configured. Set Azure main endpoint and key, or OPENAI_API_KEY in Render.");
-  const providerHeaders = useAzure
+  const providerHeaders: Record<string, string> = useAzure
     ? { "api-key": apiKey, "content-type": "application/json" }
     : { Authorization: `Bearer ${apiKey}`, "content-type": "application/json" };
 
