@@ -183,7 +183,7 @@ function nearestMusicalCut(target: number, cuts: number[], lo: number, hi: numbe
 function slotsFor(analysis: AudioAnalysis, understanding: SongUnderstanding, vision: string): Slot[] {
   const duration = Math.max(0.5, analysis.duration);
   // Honor a director's explicitly numbered shot breakdown rather than inventing more scenes.
-  const specifiedShots = [...vision.matchAll(/^\\s*(?:#{1,6}\\s*)?SHOT\\s+(\\d+)\\s*(?:[|:—–-]|$)/gim)]
+  const specifiedShots = [...vision.matchAll(/^\s*(?:#{1,6}\s*)?SHOT\s+(\d+)\s*(?:[|:—–-]|$)/gim)]
     .map((match) => Number(match[1]));
   const uniqueShots = new Set(specifiedShots);
   const explicitCount = uniqueShots.size >= 2 &&
