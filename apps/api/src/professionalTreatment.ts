@@ -409,7 +409,7 @@ Rules:
   // rather than failing the entire Professional Treatment request.
   const byIndex = new Map<number, any>();
   for (const shot of generated.shots) {
-    if (Number.isInteger(shot.index) && shot.index >= 1 && shot.index <= slots.length && !byIndex.has(shot.index)) {
+    if (Number.isInteger(shot.index) && shot.index >= 0 && shot.index < slots.length && !byIndex.has(shot.index)) {
       byIndex.set(shot.index, shot);
     }
   }
