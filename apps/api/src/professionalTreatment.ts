@@ -404,12 +404,30 @@ Rules:
     throw new Error("Professional Treatment provider returned invalid JSON.");
   }
   if (!generated || !Array.isArray(generated.shots)) throw new Error("Professional Treatment response is missing shots.");
-  if (generated.shots.length !== slots.length) {
-    throw new Error(`Professional Treatment returned ${generated.shots.length} shots for ${slots.length} timing slots.`);
+  // The model occasionally omits one indexed scene despite receiving fixed timing slots.
+  // Preserve all authoritative slot boundaries and repair at most two missing scenes
+  // rather than failing the entire Professional Treatment request.
+  const byIndex = new Map<number, any>();
+  for (const shot of generated.shots) {
+    if (Number.isInteger(shot.index) && shot.index >= 1 && shot.index <= slots.length && !byIndex.has(shot.index)) {
+      byIndex.set(shot.index, shot);
+    }
   }
-  const byIndex = new Map<number, any>(generated.shots.map((shot: any) => [shot.index, shot]));
-  if (byIndex.size !== slots.length || slots.some((slot) => !byIndex.has(slot.index))) {
-    throw new Error("Professional Treatment shot indexes do not match the fixed timing slots.");
+  const missingSlots = slots.filter((slot) => !byIndex.has(slot.index));
+  if (missingSlots.length > 2 || byIndex.size === 0) {
+    throw new Error(`Professional Treatment did not cover ${missingSlots.length} of ${slots.length} timing slots.`);
+  }
+  for (const slot of missingSlots) {
+    const nearby = [...byIndex.entries()].sort((a, b) => Math.abs(a[0] - slot.index) - Math.abs(b[0] - slot.index))[0]?.[1];
+    if (!nearby) throw new Error("Professional Treatment returned no usable shots.");
+    byIndex.set(slot.index, {
+      ...nearby,
+      index: slot.index,
+      role: slot.sectionRole || nearby.role,
+      idea: `New cutaway for ${slot.sectionLabel}: ${slot.lyricalPurpose || slot.musicalPurpose || "reflect the lyric and musical beat"}. Maintain established continuity and visual world; use a distinct composition from neighboring shots.`,
+      camera: "Complementary cutaway angle with a clearly distinct camera position and natural movement",
+      hero: false,
+    });
   }
 
   const planId = `director-plan-${randomUUID().slice(0, 8)}`;
