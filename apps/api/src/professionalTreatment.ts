@@ -180,9 +180,20 @@ function nearestMusicalCut(target: number, cuts: number[], lo: number, hi: numbe
   return usable.reduce((best, value) => Math.abs(value - target) < Math.abs(best - target) ? value : best, usable[0]!);
 }
 
-function slotsFor(analysis: AudioAnalysis, understanding: SongUnderstanding): Slot[] {
+function slotsFor(analysis: AudioAnalysis, understanding: SongUnderstanding, vision: string): Slot[] {
   const duration = Math.max(0.5, analysis.duration);
-  const targetCount = Math.min(18, Math.max(4, Math.round(duration / 6)));
+  // Honor a director's explicitly numbered shot breakdown rather than inventing more scenes.
+  const specifiedShots = [...vision.matchAll(/^\s*(?:#{1,6}\s*)?SHOT\s+(\d+)\s*(?:[|:—–-]|$)/gim)]
+    .map((match) => Number(match[1]));
+  const uniqueShots = new Set(specifiedShots);
+  const explicitCount = uniqueShots.size >= 2 &&
+    uniqueShots.size === specifiedShots.length &&
+    [...uniqueShots].every((number, index) => number === index + 1)
+      ? uniqueShots.size
+      : undefined;
+  const targetCount = explicitCount && explicitCount >= 4 && explicitCount <= 18
+    ? explicitCount
+    : Math.min(18, Math.max(4, Math.round(duration / 6)));
   const cuts = analysis.downbeats.length ? analysis.downbeats : analysis.beats;
   const boundaries = [0];
   for (let i = 1; i < targetCount; i += 1) {
@@ -269,7 +280,7 @@ export async function generateProfessionalTreatment(
       .filter((lock) => lock.locked && normalizedArtist(lock.name) === normalizedArtist(section.artist))
       .map((lock) => lock.id),
   }));
-  const slots = slotsFor(timingAnalysis, input.understanding);
+  const slots = slotsFor(timingAnalysis, input.understanding, input.vision);
   if (!slots.length) throw new Error("Could not create treatment timing slots from this song.");
 
   const fetchImpl = options.fetchImpl ?? fetch;
