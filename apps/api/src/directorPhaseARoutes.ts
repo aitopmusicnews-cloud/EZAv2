@@ -109,7 +109,16 @@ export async function directorPhaseARoutes(app: FastifyInstance, options: Direct
       return reply.code(503).send({ error: "Professional Treatment is not configured. Configure the Azure OpenAI main deployment." });
     }
     const parsed = ProfessionalTreatmentRequest.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues.map((issue) => issue.message).join("; ") });
+    if (!parsed.success) {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const messages = parsed.error.issues.map((issue) => {
+        const field = issue.path.join(".") || "request";
+        const value = issue.path.length === 1 ? body[String(issue.path[0])] : undefined;
+        const measured = typeof value === "string" ? ` (received ${value.length} characters)` : "";
+        return `${field}: ${issue.message}${measured}`;
+      });
+      return reply.code(400).send({ error: messages.join("; "), fields: parsed.error.issues.map((issue) => issue.path.join(".")) });
+    }
     if (!parsed.data.understanding.approvedAt) {
       return reply.code(400).send({ error: "Approve Song Understanding before generating a treatment." });
     }
