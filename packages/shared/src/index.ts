@@ -381,7 +381,7 @@ export type AlignOfficialLyricsRequest = z.infer<typeof AlignOfficialLyricsReque
 export const SongUnderstandingRequest = z.object({
   lyrics: LyricDocument,
   analysis: AudioAnalysis,
-  vision: z.string().max(12_000).default(""),
+  vision: z.string().max(20_000).default(""),
 });
 export type SongUnderstandingRequest = z.infer<typeof SongUnderstandingRequest>;
 

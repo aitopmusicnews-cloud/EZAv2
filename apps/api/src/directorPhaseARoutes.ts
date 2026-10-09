@@ -94,9 +94,9 @@ export async function directorPhaseARoutes(app: FastifyInstance, options: Direct
   const ProfessionalTreatmentRequest = z.object({
     analysis: AudioAnalysis,
     understanding: SongUnderstanding,
-    vision: z.string().max(4000).default(""),
+    vision: z.string().max(20_000).default(""),
     stylePrompt: z.string().max(2000).default(""),
-    directorRequest: z.string().max(4000).default(""),
+    directorRequest: z.string().max(10_000).default(""),
     creativeMode: z.enum(["new", "revise"]).default("new"),
     previousPlan: DirectorPlan.optional(),
     previousProductionBible: ProductionBible.optional(),
