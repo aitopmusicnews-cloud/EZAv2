@@ -17,6 +17,9 @@ const AUDIO_ANALYSIS_CLI = resolve(
 
 const ANALYSIS_ENV = {
   ...process.env,
+  // Bundle the scientific Python dependencies with the application so they are
+  // available to the runtime even when Render build-site packages differ.
+  PYTHONPATH: [resolve(dirname(fileURLToPath(import.meta.url)), "../../../audio_analysis/vendor"), process.env.PYTHONPATH].filter(Boolean).join(process.platform === "win32" ? ";" : ":"),
   // Keep scientific runtimes inside Render's small CPU/memory envelope.
   OMP_NUM_THREADS: "1",
   OPENBLAS_NUM_THREADS: "1",

@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "dev": "pnpm --filter @mvs/shared build && pnpm -r --parallel run dev",
-    "build": "pnpm -r build",
+    "build": "python3 -m pip install --disable-pip-version-check --target audio_analysis/vendor -r audio_analysis/requirements.txt && pnpm -r build",
     "typecheck": "pnpm --filter @mvs/shared build && pnpm -r typecheck",
     "dev:web": "pnpm --filter @mvs/web dev",
     "dev:api": "pnpm --filter @mvs/api dev",
