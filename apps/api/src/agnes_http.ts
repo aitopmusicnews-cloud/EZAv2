@@ -91,7 +91,15 @@ async function fetchAgnesWithRetry(
     const date = header && !Number.isFinite(seconds) ? Date.parse(header) : NaN;
     const requestedDelay = Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000
       : Number.isFinite(date) ? Math.max(0, date - Date.now()) : 0;
-    const delayMs = Math.max(requestedDelay, response.status === 429 ? 61_000 : RETRY_DELAYS_MS[attempt]!);
+    // Provider 503 "no available channel" indicates capacity exhaustion, not a bad prompt.
+    // Space out attempts instead of hammering the distributor every 0.5–2 seconds.
+    const capacityDelayMs = [30_000, 60_000, 90_000][attempt]!;
+    const delayMs = Math.max(
+      requestedDelay,
+      response.status === 429 ? 61_000 : response.status === 503 && url === AGNES_CREATE_URL
+        ? capacityDelayMs
+        : RETRY_DELAYS_MS[attempt]!,
+    );
     await response.body?.cancel();
     await sleepImpl(delayMs);
   }
