@@ -1,6 +1,6 @@
 # EZAv2 — Creative Music Video Director V2
 
-EZAv2 is an audio-aware music-video production app built around **BeatSync**, **Agnes Video V2.0**, local music analysis, Azure/OpenAI-assisted planning, and FFmpeg final rendering.
+EZAv2 is an audio-aware music-video production app built around **BeatSync**, **Agnes Video 2.5**, local music analysis, Azure/OpenAI-assisted planning, and FFmpeg final rendering.
 
 ## Current modes
 
@@ -97,11 +97,11 @@ The selected format is passed into Agnes generation for Director promo takes and
 
 ## Agnes rules
 
-- Video model: `agnes-video-v2.0`
+- Video model: `agnes-video-2.5`
 - Image model: `agnes-image-2.1-flash`
 - Output timing: 24 fps
-- Frame requests: valid `8n+1` counts
-- Maximum provider request: 441 frames
+- Request duration: 4–12 seconds (segments longer scenes)
+- 2.5 request fields: `mode`, `seconds`, `size`, `aspect_ratio`, `first_frame` / `last_frame` (legacy `width`, `height`, `num_frames` are not sent)
 - Long timeline slots are segmented internally and stitched automatically.
 - Generated clip audio is not used in Final Cut.
 
