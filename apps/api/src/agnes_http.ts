@@ -115,6 +115,8 @@ export async function createAgnesVideo(
     width: number;
     height: number;
     numFrames: number;
+    seconds?: number;
+    aspectRatio?: string;
   },
   apiKey: string,
   fetchImpl: FetchLike = fetch,
@@ -133,16 +135,15 @@ export async function createAgnesVideo(
         body: JSON.stringify({
           model: AGNES_MODEL,
           prompt: input.prompt,
-          ...(input.negativePrompt?.trim() ? { negative_prompt: input.negativePrompt.trim() } : {}),
+          prompt: [input.prompt, input.negativePrompt?.trim() ? `Avoid: ${input.negativePrompt.trim()}` : ""].filter(Boolean).join("\n"),
+          mode: input.keyframeUrls?.length ? "keyframe" : input.imageUrl ? "keyframe" : "text",
           ...(input.keyframeUrls?.length
-            ? { extra_body: { image: input.keyframeUrls, mode: "keyframes" } }
-            : input.imageUrl
-              ? { image: input.imageUrl }
-              : {}),
-          width: input.width,
-          height: input.height,
-          num_frames: input.numFrames,
-          frame_rate: 24,
+            ? { first_frame: input.keyframeUrls[0], last_frame: input.keyframeUrls[1] }
+            : input.imageUrl ? { first_frame: input.imageUrl } : {}),
+          seconds: String(Math.max(4, Math.min(12, Math.ceil(input.seconds ?? input.numFrames / 24)))),
+          size: "1080P",
+          aspect_ratio: input.aspectRatio ?? "16:9",
+          n: 1,
         }),
       },
       fetchImpl,
@@ -225,7 +226,7 @@ export async function getAgnesResultOnce(
   }
 
   if (status === "failed") {
-    throw new Error("Agnes video generation failed before producing a video.");
+    throw new Error(`Agnes video generation failed: ${providerMessage(payload) ?? "no video was produced"}.`);
   }
 
   if (status !== "completed") {
