@@ -134,7 +134,6 @@ export async function createAgnesVideo(
         },
         body: JSON.stringify({
           model: AGNES_MODEL,
-          prompt: input.prompt,
           prompt: [input.prompt, input.negativePrompt?.trim() ? `Avoid: ${input.negativePrompt.trim()}` : ""].filter(Boolean).join("\n"),
           mode: input.keyframeUrls?.length ? "keyframe" : input.imageUrl ? "keyframe" : "text",
           ...(input.keyframeUrls?.length
