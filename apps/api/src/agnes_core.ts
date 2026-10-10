@@ -1,7 +1,7 @@
 export const AGNES_CREATE_URL = "https://apihub.agnes-ai.com/v1/videos";
 export const AGNES_STATUS_URL = "https://apihub.agnes-ai.com/agnesapi";
 export const AGNES_IMAGE_CREATE_URL = "https://apihub.agnes-ai.com/v1/images/generations";
-export const AGNES_MODEL = "agnes-video-v2.0";
+export const AGNES_MODEL = "agnes-video-2.5";
 export const AGNES_FRAME_RATE = 24;
 export const AGNES_MAX_FRAMES = 441;
 export const AGNES_MAX_SEGMENT_DURATION = AGNES_MAX_FRAMES / AGNES_FRAME_RATE;
@@ -78,7 +78,7 @@ export function isAgnesWaitStatus(status: string): boolean {
 
 export function parseAgnesCreateIds(payload: unknown): AgnesCreateIds {
   if (!isRecord(payload)) throw new Error("Agnes create response was not an object.");
-  const videoId = typeof payload.video_id === "string" ? payload.video_id.trim() : "";
+  const videoId = typeof payload.video_id === "string" ? payload.video_id.trim() : typeof payload.id === "string" ? payload.id.trim() : "";
   if (!videoId) throw new Error("Agnes create response did not include video_id.");
   const taskId = typeof payload.task_id === "string" && payload.task_id.trim()
     ? payload.task_id.trim()
