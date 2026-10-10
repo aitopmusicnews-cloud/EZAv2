@@ -34,7 +34,7 @@ type AgnesSegmentJob = AgnesDurationSegment & {
 };
 
 type AgnesJobState = {
-  kind: "agnes-video-v2.0";
+  kind: "agnes-video-v2.0" | "agnes-video-2.5";
   targetDuration: number;
   aspectRatio: string;
   sourceMode: "textToVideo" | "imageToVideo" | "keyframeToVideo";
@@ -54,7 +54,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isAgnesState(value: unknown): value is AgnesJobState {
   return (
     isRecord(value) &&
-    value.kind === "agnes-video-v2.0" &&
+    (value.kind === "agnes-video-v2.0" || value.kind === "agnes-video-2.5") &&
     typeof value.targetDuration === "number" &&
     typeof value.aspectRatio === "string" &&
     (value.sourceMode === "textToVideo" || value.sourceMode === "imageToVideo" || value.sourceMode === "keyframeToVideo") &&
@@ -118,6 +118,8 @@ async function createSegment(
       width,
       height,
       numFrames: segment.numFrames,
+      seconds: segment.targetDuration,
+      aspectRatio: state.aspectRatio,
     },
     agnesApiKey(),
   );
@@ -247,9 +249,14 @@ export async function startAgnesVideo(
     throw new Error("Keyframe-to-video generation requires both a start frame and an end frame.");
   }
 
-  const segments = splitTimelineDuration(duration).map((segment) => ({ ...segment }));
+  // Agnes 2.5 accepts at most 12 seconds per request; keep legacy frame counts only for compatibility.
+  const segmentCount = Math.max(1, Math.ceil(duration / 12));
+  const segments = Array.from({ length: segmentCount }, (_, index) => ({
+    targetDuration: duration / segmentCount,
+    numFrames: Math.round((duration / segmentCount) * 24),
+  }));
   const state: AgnesJobState = {
-    kind: "agnes-video-v2.0",
+    kind: "agnes-video-2.5",
     targetDuration: duration,
     aspectRatio: requestedAspectRatio(req),
     sourceMode,
