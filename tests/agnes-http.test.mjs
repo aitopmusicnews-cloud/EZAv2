@@ -8,11 +8,11 @@ let init;
 const ids = await createAgnesVideo({prompt:'scene',width:1152,height:768,numFrames:121}, 'secret', async (_u, i)=>{init=i;return jsonResponse({video_id:'v1',task_id:'t1'});});
 assert.deepEqual(ids,{videoId:'v1',taskId:'t1'});
 let body=JSON.parse(String(init.body));
-assert.equal(body.model,'agnes-video-v2.0'); assert.equal(body.frame_rate,24); assert.equal(body.num_frames,121); assert.equal(body.image,undefined);
+assert.equal(body.model,'agnes-video-2.5'); assert.equal(body.mode,'text'); assert.equal(body.seconds,'6'); assert.equal(body.size,'1080P'); assert.equal(body.first_frame,undefined);
 await createAgnesVideo({prompt:'move',imageUrl:'https://example.com/a.png',width:1152,height:768,numFrames:121}, 'secret', async (_u,i)=>{init=i;return jsonResponse({video_id:'v2'});});
-body=JSON.parse(String(init.body)); assert.equal(body.image,'https://example.com/a.png');
+body=JSON.parse(String(init.body)); assert.equal(body.first_frame,'https://example.com/a.png'); assert.equal(body.mode,'keyframe');
 await createAgnesVideo({prompt:'transition',keyframeUrls:['https://example.com/a.png','https://example.com/b.png'],width:1152,height:768,numFrames:121}, 'secret', async (_u,i)=>{init=i;return jsonResponse({video_id:'v3'});});
-body=JSON.parse(String(init.body)); assert.deepEqual(body.extra_body,{image:['https://example.com/a.png','https://example.com/b.png'],mode:'keyframes'});
+body=JSON.parse(String(init.body)); assert.equal(body.mode,'keyframe'); assert.equal(body.first_frame,'https://example.com/a.png'); assert.equal(body.last_frame,'https://example.com/b.png');
 for (const status of ['pending','queued','in_progress']) {
   const r=await getAgnesResultOnce({videoId:'v',taskId:'t'},'secret',async()=>jsonResponse({status}));
   assert.deepEqual(r,{kind:'waiting',status});
